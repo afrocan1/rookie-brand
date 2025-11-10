@@ -12,12 +12,12 @@ import { Navbar } from '../components/navbar'
 import { Footer } from '../components/footer'
 
 export const metadata: Metadata = {
-  title: 'Home | Bewave',
+  title: 'Home | Audience economy',
   description:
-    'A Bewave facilita a conexão entre artistas e as principais plataformas digitais, oferecendo distribuição global e suporte especializado',
+    'The audience economy facilitates the connection between artists and major digital platforms, offering global distribution and specialized support',
   keywords: [
-    'bewave',
-    'bewave digital music',
+    'Audience economy',
+    'Audience economy digital music',
     'music',
     'artist',
     'música',
