@@ -2,7 +2,7 @@
 import Link from 'next/link'
 import Image from 'next/image'
 
-import bewave from '../../public/audience economy (4).png'
+import bewave from '../../public/audience economy (5).png'
 
 type NavbarMenuType = {
   name: string
