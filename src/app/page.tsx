@@ -44,8 +44,10 @@ export default function Home() {
         </h1>
 
         <p className="max-w-[675px] w-full text-center text-[18px] leading-7 pb-10 md:pb-2 z-10">
-The Audience Economy facilitates the connection between artists and major digital platforms, offering global distribution and specialized support.
-        </p>
+  The Audience Economy facilitates the connection between artists and
+  major digital platforms, offering global distribution and specialized
+  support.
+</p>
 
         <CTAButton />
       </div>
