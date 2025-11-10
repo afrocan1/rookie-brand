@@ -16,35 +16,32 @@ body {
   font-style: normal;
 }
 
-
 /* Animated Gradient Text */
 .gradient-text {
   background: linear-gradient(
     to right,
     #ffdfc3,
-    #EE95F8,
-    #D495FF,
+    #FF8A80,
+    #FFD180,
     #49EAFF,
-    #D495FF,
-    #EE95F8,
+    #FFD180,
+    #FF8A80,
     #ffdfc3,
-    #EE95F8,
-    #D495FF,
+    #FF8A80,
+    #FFD180,
     #49EAFF
   );
   background-size: 300% 300%;
   background-clip: text;
 }
 
-
 /* Button Animated Glowing Border */
-/* Button Wrapper (Fake border) */
 .button-wrapper {
   @apply relative w-[142px] h-[42px] bg-gradient-to-b from-[#333] to-[#131313] flex items-center justify-center overflow-hidden rounded-3xl transition-all duration-200;
 }
 
 .button-wrapper:hover {
-  @apply scale-105 shadow-[0_0_100px_16px_#7b3bfc70];
+  @apply scale-105 shadow-[0_0_100px_16px_#FF8A8070];
 }
 
 .button-wrapper:active {
@@ -54,7 +51,7 @@ body {
 .button-wrapper::before {
   background: conic-gradient(
     rgba(255, 223, 195) 15deg,
-    rgba(212, 149, 255) 30deg,
+    rgba(255, 138, 128) 30deg,
     rgba(73, 234, 255) 45deg,
     transparent 60deg
   );
@@ -65,17 +62,14 @@ body {
   background: conic-gradient(
     transparent 180deg,
     rgba(255, 223, 195) 195deg,
-    rgba(212, 149, 255) 210deg,
+    rgba(255, 138, 128) 210deg,
     rgba(73, 234, 255) 225deg,
     transparent 250deg
   );
-
   @apply absolute z-10 h-[330%] w-[100%] left-[-0%] top-[-100%] content-[''] animate-border-spin;
 }
 
-
 /* Image Animated Glowing Border */
-/* Image Wrapper (Fake Border) */
 .image-wrapper {
   @apply relative max-w-[525px] w-full max-h-[430px] h-full lgp:h-[430px] aspect-[5/4] lgp:aspect-auto bg-[#333] flex items-center justify-center overflow-hidden rounded-2xl;
 }
@@ -83,7 +77,7 @@ body {
 .image-wrapper::before {
   background: conic-gradient(
     rgba(255, 223, 195) 10deg,
-    rgba(212, 149, 255) 20deg,
+    rgba(255, 138, 128) 20deg,
     rgba(73, 234, 255) 30deg,
     transparent 40deg
   );
@@ -94,13 +88,12 @@ body {
   background: conic-gradient(
     transparent 180deg,
     rgba(255, 223, 195) 190deg,
-    rgba(212, 149, 255) 200deg,
+    rgba(255, 138, 128) 200deg,
     rgba(73, 234, 255) 210deg,
     transparent 220deg
   );
   @apply absolute z-10 h-[200%] w-[200%] left-[-50%] top-[-50%] content-[''] animate-border-spin;
 }
-
 
 /* Carousel Wrapper */
 .container-carousel {
@@ -114,8 +107,6 @@ body {
 .container-carousel::after {
   @apply absolute z-10 right-0 top-0 h-[100px] w-[80px] md:w-[200px] bg-gradient-to-r from-black/0 to-black content-[''];
 }
-
-
 
 /* Fonts */
 .font-nunito-sans {
