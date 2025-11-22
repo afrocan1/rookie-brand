@@ -44,8 +44,8 @@ export default function Home() {
         </h1>
 
         <p className="max-w-[675px] w-full text-center text-[18px] leading-7 pb-10 md:pb-2 z-10">
-          The Rookie Brand facilitates the connection between artists and
-          major digital platforms, offering global distribution and specialized
+          The Rookie Brand facilitates the connection between artists and major
+          digital platforms, offering global distribution and specialized
           support.
         </p>
 
@@ -80,8 +80,8 @@ export default function Home() {
               market to expand your reach globally. Our platform ensures better
               earnings, faster approvals, and dedicated support to make sure
               your artists have everything they need at every stage. Click on
-              &quot;Join Us&quot; and discover everything The Rookie Brand
-              can do to take your artists to the next level.
+              &quot;Join Us&quot; and discover everything The Rookie Brand can
+              do to take your artists to the next level.
             </p>
           </div>
 
@@ -145,10 +145,10 @@ export default function Home() {
             Simple and Intuitive Dashboard
           </h3>
           <p className="text-[15px] leading-7">
-            The Rookie Brand was developed to simplify and focus on what
-            truly matters for our clients. Every step, from uploading your first
-            track to distribution in stores, comes with interactive and
-            real-time tutorials. We don&apos;t display unnecessary or cluttered
+            The Rookie Brand was developed to simplify and focus on what truly
+            matters for our clients. Every step, from uploading your first track
+            to distribution in stores, comes with interactive and real-time
+            tutorials. We don&apos;t display unnecessary or cluttered
             information on your dashboard, always ensuring 24/7 uptime. We
             provide update alerts and partnership programs available on our
             Marketplace, accessible directly from your dashboard.
