@@ -25,7 +25,7 @@ export function Footer() {
           </Link>
         </div>
       </div>
-      &copy; 2025 The audience economy, All Rights Reserved.
+      &copy; 2025 The Rookie Brand, All Rights Reserved.
     </footer>
   )
 }
