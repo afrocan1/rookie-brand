@@ -16,13 +16,13 @@ const infoCards: CardsProps[] = [
     icon: <AiOutlinePercentage size={42} color="#F5F5F5" />,
     title: 'Higher Earnings, Your Way',
     description:
-      'Goaradio pays out 75% of revenue to artists, 85% if you release exclusively with us. Every stream from every fan goes directly to you, not into a pool shared with artists you\'ve never heard of.',
+      'GoaRadio pays out 75% of revenue to artists — 85% if you release exclusively with us. Every stream from every fan goes directly to you, not into a pool shared with artists you\'ve never heard of.',
   },
   {
     icon: <LuUser size={42} color="#F5F5F5" />,
     title: 'Your Fans, Your Community',
     description:
-      'Invite up to 10,000 fans a month. Build a loyal audience that earns alongside you. On Goaradio, the people who support your music are rewarded for it, which means they keep coming back.',
+      'Invite up to 10,000 fans a month. Build a loyal audience that earns alongside you. On GoaRadio, the people who support your music are rewarded for it — which means they keep coming back.',
   },
   {
     icon: <HiOutlineLightningBolt size={42} color="#F5F5F5" />,
@@ -44,8 +44,8 @@ export default function Home() {
         </h1>
 
         <p className="max-w-[675px] w-full text-center text-[18px] leading-7 pb-10 md:pb-2 z-10">
-          Goaradio for Artists gives you full control over your profile, your
-          catalogue, and your revenue all in one place.
+          GoaRadio for Artists gives you full control over your profile, your
+          catalogue, and your revenue — all in one place.
         </p>
 
         <CTAButton />
@@ -74,7 +74,7 @@ export default function Home() {
             </h3>
             <p className="text-[15px]">
               Managing multiple artists on GoaRadio gives you a unified view
-              across every profile, streams, earnings, and catalogue all in one
+              across every profile — streams, earnings, and catalogue all in one
               dashboard. Each artist keeps their own profile and direct fan
               relationship while you oversee the full picture. Click
               &quot;Join Us&quot; and let&apos;s talk about what GoaRadio can
@@ -100,8 +100,8 @@ export default function Home() {
             Change it here. It goes live on GoaRadio instantly.
           </h3>
           <p className="text-[15px] leading-7">
-            Update your cover art, swap your profile picture, edit your bio
-            everything you change in Goaradio for Artists reflects immediately
+            Update your cover art, swap your profile picture, edit your bio —
+            everything you change in GoaRadio for Artists reflects immediately
             on your public page. No waiting. No approvals. Your profile is
             yours, and it moves when you move. Listeners across the platform
             always see the version of you that you chose to put forward.
@@ -141,7 +141,7 @@ export default function Home() {
           </h3>
           <p className="text-[15px] leading-7">
             See your stream count, $GOA earnings, and fan activity in real
-            time. Add or remove tracks, and they show up or disappear on
+            time. Add or remove tracks, and they show up — or disappear — on
             GoaRadio immediately. No clutter, no guesswork. Just the data you
             need to understand your audience and grow on your own terms.
           </p>
@@ -157,7 +157,7 @@ export default function Home() {
             The small pool model changes everything.
           </h3>
           <p className="text-[15px] leading-7 mb-5">
-            Spotify splits revenue across every stream on the platform. Goaradio
+            Spotify splits revenue across every stream on the platform. GoaRadio
             splits each listener&apos;s subscription fee only among the artists
             they actually listened to. If a fan spends 50% of their time on
             your music, you get 50% of their share. That&apos;s the difference
