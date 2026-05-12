@@ -20,8 +20,8 @@ export function ImageCarousel() {
 
   const images: ImageTypes[] = [
     {
-      imageUrl: '/images/spotify.png',
-      alt: 'Spotify logo',
+      imageUrl: '/images/amayli.jpeg',
+      alt: 'amayli jpeg',
     },
     {
       imageUrl: '/images/tidal.png',
