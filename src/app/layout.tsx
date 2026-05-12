@@ -8,42 +8,67 @@ import {
   Wix_Madefor_Display,
   Wix_Madefor_Text,
 } from 'next/font/google'
+
 import { Navbar } from '../components/navbar'
 import { Footer } from '../components/footer'
 
 export const metadata: Metadata = {
-  title: 'Home | The Rookie Brand',
+  title: 'Goaradio for Artists',
   description:
-    'The rookie brand facilitates the connection between artists and major digital platforms, offering global distribution and specialized support',
+    'Goaradio for Artists helps creators grow their audience, track engagement, and earn through a listener-first streaming ecosystem built around artists and fans.',
   keywords: [
-    'Rookie Brand',
-    'Audience economy digital music',
-    'music',
-    'artist',
-    'música',
-    'artista',
-    'distribuidora musical',
-    'bewave distribuidora digital',
+    'Goaradio',
+    'Goaradio for Artists',
+    'music streaming',
+    'artist platform',
+    'listen to earn',
+    'music distribution',
+    'artist dashboard',
+    'music discovery',
+    'streaming platform',
+    'creator economy',
+    'web3 music',
+    'artist rewards',
+    'fan engagement',
   ],
   authors: [
     {
-      name: 'Lucas Gabriel',
-      url: 'https://github.com/LuquinhasGCZJ',
-    },
-    {
-      name: 'Murilo Loiola',
-      url: 'https://github.com/murilo-dan',
-    },
-    {
-      name: 'Pietro Rhyan',
-      url: 'https://github.com/PietroRhyan',
+      name: 'Goaradio',
+      url: 'https://goaradio.org',
     },
   ],
-  applicationName: 'The Rookie Brand',
+  creator: 'Goaradio',
+  publisher: 'Goaradio',
+  applicationName: 'Goaradio for Artists',
+
   icons: {
-    icon: './5e911001-b98a-47f9-bae2-d42c99144c0c_removalai_preview.png',
-    apple: './5e911001-b98a-47f9-bae2-d42c99144c0c_removalai_preview.png',
-    shortcut: './5e911001-b98a-47f9-bae2-d42c99144c0c_removalai_preview.png',
+    icon: '/goaradio logo round (1).png',
+    apple: '/goaradio logo round (1).png',
+    shortcut: '/goaradio logo round (1).png',
+  },
+
+  openGraph: {
+    title: 'Goaradio for Artists',
+    description:
+      'Build deeper fan connections, track real engagement, and grow your audience with Goaradio for Artists.',
+    siteName: 'Goaradio',
+    type: 'website',
+    images: [
+      {
+        url: '/goaradio logo round (1).png',
+        width: 512,
+        height: 512,
+        alt: 'Goaradio',
+      },
+    ],
+  },
+
+  twitter: {
+    card: 'summary_large_image',
+    title: 'Goaradio for Artists',
+    description:
+      'A streaming platform built around artists, listeners, and real engagement.',
+    images: ['/goaradio logo round (1).png'],
   },
 }
 
@@ -76,7 +101,9 @@ export default function RootLayout({
         className={`${madeforText.className} ${madeforDisplay.variable} ${nunitoSans.variable} bg-black text-marfin min-h-screen flex flex-col justify-between px-5`}
       >
         <Navbar />
+
         {children}
+
         <Footer />
       </body>
     </html>
