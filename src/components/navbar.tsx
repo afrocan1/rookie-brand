@@ -19,7 +19,6 @@ import {
   Sparkles,
   LogIn,
   UserPlus,
-  Chrome,
   Instagram,
   Twitter,
   Mail,
@@ -89,12 +88,21 @@ export function Navbar() {
   const [artistsLoading, setArtistsLoading]   = useState(false)
   const [searchQuery, setSearchQuery]         = useState('')
   const [selectedArtist, setSelectedArtist]   = useState<AirtableArtist | null>(null)
+  const [isSmall, setIsSmall]                 = useState(false)
 
   const overlayRef = useRef<HTMLDivElement>(null)
 
   useEffect(() => {
     const unsub = onAuthStateChanged(auth, (user) => setIsLoggedIn(!!user))
     return unsub
+  }, [])
+
+  // ── Detect small screens ──────────────────────────────────────────────────
+  useEffect(() => {
+    function check() { setIsSmall(window.innerWidth < 500) }
+    check()
+    window.addEventListener('resize', check)
+    return () => window.removeEventListener('resize', check)
   }, [])
 
   useEffect(() => {
@@ -150,7 +158,6 @@ export function Navbar() {
     if (e.target === overlayRef.current) closeModal()
   }
 
-  // eslint-disable-next-line @typescript-eslint/no-explicit-any
   async function handleLogin(e: React.FormEvent) {
     e.preventDefault()
     setError('')
@@ -241,17 +248,17 @@ export function Navbar() {
 
   // ─── Shared styles ────────────────────────────────────────────────────────
   const inputStyle: React.CSSProperties = {
-    width:       '100%',
-    padding:     '11px 13px',
-    background:  T.bg2,
-    border:      `1px solid ${T.border2}`,
+    width:        '100%',
+    padding:      '11px 13px',
+    background:   T.bg2,
+    border:       `1px solid ${T.border2}`,
     borderRadius: 10,
-    color:       T.text,
-    fontFamily:  "'DM Sans', sans-serif",
-    fontSize:    14,
-    outline:     'none',
-    boxSizing:   'border-box',
-    transition:  'border-color 0.2s',
+    color:        T.text,
+    fontFamily:   "'DM Sans', sans-serif",
+    fontSize:     14,
+    outline:      'none',
+    boxSizing:    'border-box',
+    transition:   'border-color 0.2s',
   }
 
   const btnPrimary: React.CSSProperties = {
@@ -299,11 +306,11 @@ export function Navbar() {
           <div
             key={i}
             style={{
-              height:     8,
-              width:      i === current ? 24 : 8,
+              height:       8,
+              width:        i === current ? 24 : 8,
               borderRadius: i === current ? 4 : '50%',
-              background: i < current ? T.success : i === current ? T.accent : T.muted2,
-              transition: 'all 0.3s',
+              background:   i < current ? T.success : i === current ? T.accent : T.muted2,
+              transition:   'all 0.3s',
             }}
           />
         ))}
@@ -369,15 +376,15 @@ export function Navbar() {
                   key={artist.id}
                   onClick={() => setSelectedArtist(isSelected ? null : artist)}
                   style={{
-                    display:    'flex',
-                    alignItems: 'center',
-                    gap:        14,
-                    padding:    '12px 14px',
-                    background: isSelected ? 'rgba(255,215,0,0.08)' : T.bg2,
-                    border:     `1px solid ${isSelected ? T.accent : T.border}`,
+                    display:      'flex',
+                    alignItems:   'center',
+                    gap:          14,
+                    padding:      '12px 14px',
+                    background:   isSelected ? 'rgba(255,215,0,0.08)' : T.bg2,
+                    border:       `1px solid ${isSelected ? T.accent : T.border}`,
                     borderRadius: 12,
-                    cursor:     'pointer',
-                    transition: 'all 0.2s',
+                    cursor:       'pointer',
+                    transition:   'all 0.2s',
                   }}
                 >
                   <img
@@ -495,15 +502,15 @@ export function Navbar() {
       <div style={{ textAlign: 'center', padding: '12px 0' }}>
         <StepDots current={2} />
         <div style={{
-          width:        72,
-          height:       72,
-          background:   'rgba(255,215,0,0.08)',
-          border:       `1px solid rgba(255,215,0,0.2)`,
-          borderRadius: '50%',
-          display:      'flex',
-          alignItems:   'center',
+          width:          72,
+          height:         72,
+          background:     'rgba(255,215,0,0.08)',
+          border:         `1px solid rgba(255,215,0,0.2)`,
+          borderRadius:   '50%',
+          display:        'flex',
+          alignItems:     'center',
           justifyContent: 'center',
-          margin:       '0 auto 16px',
+          margin:         '0 auto 16px',
         }}>
           <PartyPopper size={28} color={T.accent} />
         </div>
@@ -530,26 +537,26 @@ export function Navbar() {
         .goa-btn-secondary:hover { background: #181818 !important; }
       `}</style>
 
-      {/* ── Navbar ── */}
+      {/* ── Navbar — original bg/shadow restored ── */}
       <header style={{
-        maxWidth:           1060,
-        width:              '100%',
-        padding:            '12px 20px',
-        boxShadow:          '0 0 0 1px rgba(255,215,0,0.08)',
-        background:         'rgba(10,10,10,0.85)',
-        backdropFilter:     'blur(12px)',
-        WebkitBackdropFilter: 'blur(12px)',
-        position:           'fixed',
-        zIndex:             40,
-        top:                18,
-        left:               '50%',
-        transform:          'translateX(-50%)',
-        display:            'flex',
-        alignItems:         'center',
-        justifyContent:     'space-between',
-        borderRadius:       16,
-        border:             `1px solid ${T.border}`,
+        maxWidth:             1060,
+        width:                '100%',
+        padding:              '12px 20px',
+        boxShadow:            '0 -1px 0 1px rgba(51,51,51,0.31)',
+        background:           'rgba(0,0,0,0.3)',
+        backdropFilter:       'blur(10px)',
+        WebkitBackdropFilter: 'blur(10px)',
+        position:             'fixed',
+        zIndex:               40,
+        top:                  18,
+        left:                 '50%',
+        transform:            'translateX(-50%)',
+        display:              'flex',
+        alignItems:           'center',
+        justifyContent:       'space-between',
+        borderRadius:         16,
       }}>
+        {/* Logo */}
         <Link href="/" style={{ flexShrink: 0, display: 'flex', alignItems: 'center' }}>
           <div style={{
             position:     'relative',
@@ -557,76 +564,101 @@ export function Navbar() {
             height:       52,
             borderRadius: '50%',
             overflow:     'hidden',
-            border:       `1px solid rgba(255,215,0,0.2)`,
-            background:   T.bg,
+            border:       '1px solid #2A2A2A',
+            background:   '#0A0A0A',
           }}>
             <Image src={bewave} alt="Goaradio logo" fill priority quality={100} style={{ objectFit: 'cover', transform: 'scale(1.05)' }} />
           </div>
         </Link>
 
+        {/* Nav buttons — collapse to icon-only on small screens */}
         <div style={{ display: 'flex', alignItems: 'center', gap: 8 }}>
           {isLoggedIn ? (
             <>
-              <Link href="/dashboard" style={{
-                padding:        '9px 18px',
-                background:     T.accent,
-                color:          '#0a0a0a',
-                borderRadius:   8,
-                fontSize:       13,
-                fontWeight:     700,
-                textDecoration: 'none',
-                display:        'flex',
-                alignItems:     'center',
-                gap:            6,
-              }}>
-                <LayoutDashboard size={14} /> Dashboard
+              <Link
+                href="/dashboard"
+                title="Dashboard"
+                style={{
+                  padding:        isSmall ? '9px 10px' : '9px 18px',
+                  background:     T.accent,
+                  color:          '#0a0a0a',
+                  borderRadius:   8,
+                  fontSize:       13,
+                  fontWeight:     700,
+                  textDecoration: 'none',
+                  display:        'flex',
+                  alignItems:     'center',
+                  gap:            isSmall ? 0 : 6,
+                  whiteSpace:     'nowrap',
+                }}
+              >
+                <LayoutDashboard size={15} />
+                {!isSmall && 'Dashboard'}
               </Link>
-              <button onClick={handleLogout} style={{
-                padding:      '9px 14px',
-                background:   'transparent',
-                color:        T.muted,
-                border:       `1px solid ${T.border}`,
-                borderRadius: 8,
-                fontSize:     13,
-                cursor:       'pointer',
-                display:      'flex',
-                alignItems:   'center',
-                gap:          6,
-              }}>
-                <LogOut size={14} /> Sign out
+              <button
+                onClick={handleLogout}
+                title="Sign out"
+                style={{
+                  padding:      isSmall ? '9px 10px' : '9px 14px',
+                  background:   'transparent',
+                  color:        '#aaa',
+                  border:       '1px solid #2A2A2A',
+                  borderRadius: 8,
+                  fontSize:     13,
+                  cursor:       'pointer',
+                  display:      'flex',
+                  alignItems:   'center',
+                  gap:          isSmall ? 0 : 6,
+                  whiteSpace:   'nowrap',
+                }}
+              >
+                <LogOut size={15} />
+                {!isSmall && 'Sign out'}
               </button>
             </>
           ) : (
             <>
-              <button onClick={openModal} style={{
-                padding:      '9px 18px',
-                background:   'transparent',
-                color:        T.muted,
-                border:       `1px solid ${T.border}`,
-                borderRadius: 8,
-                fontSize:     13,
-                fontWeight:   500,
-                cursor:       'pointer',
-                display:      'flex',
-                alignItems:   'center',
-                gap:          6,
-              }}>
-                <LogIn size={14} /> Sign in
+              <button
+                onClick={openModal}
+                title="Sign in"
+                style={{
+                  padding:      isSmall ? '9px 10px' : '9px 20px',
+                  background:   'transparent',
+                  color:        '#aaa',
+                  border:       '1px solid #2A2A2A',
+                  borderRadius: 8,
+                  fontSize:     13,
+                  fontWeight:   500,
+                  cursor:       'pointer',
+                  display:      'flex',
+                  alignItems:   'center',
+                  gap:          isSmall ? 0 : 6,
+                  whiteSpace:   'nowrap',
+                }}
+              >
+                <LogIn size={15} />
+                {!isSmall && 'Sign in'}
               </button>
-              <button onClick={openModal} style={{
-                padding:      '9px 18px',
-                background:   T.accent,
-                color:        '#0a0a0a',
-                border:       'none',
-                borderRadius: 8,
-                fontSize:     13,
-                fontWeight:   700,
-                cursor:       'pointer',
-                display:      'flex',
-                alignItems:   'center',
-                gap:          6,
-              }}>
-                <UserPlus size={14} /> Get Started
+              <button
+                onClick={openModal}
+                title="Get Started"
+                style={{
+                  padding:      isSmall ? '9px 10px' : '9px 20px',
+                  background:   T.accent,
+                  color:        '#0a0a0a',
+                  border:       'none',
+                  borderRadius: 8,
+                  fontSize:     13,
+                  fontWeight:   700,
+                  cursor:       'pointer',
+                  display:      'flex',
+                  alignItems:   'center',
+                  gap:          isSmall ? 0 : 6,
+                  whiteSpace:   'nowrap',
+                }}
+              >
+                <UserPlus size={15} />
+                {!isSmall && 'Get Started'}
               </button>
             </>
           )}
@@ -705,10 +737,7 @@ export function Navbar() {
                   Are you an existing artist on GoaRadio, or joining for the first time?
                 </p>
                 <div style={{ display: 'flex', flexDirection: 'column', gap: 10 }}>
-                  <button
-                    onClick={() => { setStep('claim-pick'); setError('') }}
-                    style={btnPrimary}
-                  >
+                  <button onClick={() => { setStep('claim-pick'); setError('') }} style={btnPrimary}>
                     <Mic2 size={16} /> Claim my GoaRadio profile
                   </button>
                   <button onClick={() => setStep('signup')} style={btnSecondary}>
@@ -741,25 +770,8 @@ export function Navbar() {
                   Start earning from your music on GoaRadio.
                 </p>
                 <form onSubmit={handleSignup} style={{ display: 'flex', flexDirection: 'column', gap: 14 }}>
-                  <input
-                    className="goa-input"
-                    style={inputStyle}
-                    type="email"
-                    placeholder="Email address"
-                    value={email}
-                    onChange={(e) => setEmail(e.target.value)}
-                    required
-                  />
-                  <input
-                    className="goa-input"
-                    style={inputStyle}
-                    type="password"
-                    placeholder="Create a password (min 6 chars)"
-                    value={password}
-                    onChange={(e) => setPassword(e.target.value)}
-                    required
-                    minLength={6}
-                  />
+                  <input className="goa-input" style={inputStyle} type="email" placeholder="Email address" value={email} onChange={(e) => setEmail(e.target.value)} required />
+                  <input className="goa-input" style={inputStyle} type="password" placeholder="Create a password (min 6 chars)" value={password} onChange={(e) => setPassword(e.target.value)} required minLength={6} />
                   {error && <p style={{ color: '#ff6b6b', fontSize: 13, margin: 0 }}>{error}</p>}
                   <button type="submit" style={btnPrimary} disabled={loading}>
                     <UserPlus size={15} />
@@ -775,19 +787,11 @@ export function Navbar() {
                   </button>
                   <div style={{ textAlign: 'center' }}>
                     <span style={{ color: T.muted2, fontSize: 13 }}>Already have an account?{' '}</span>
-                    <button
-                      type="button"
-                      onClick={() => setStep('login')}
-                      style={{ background: 'none', border: 'none', color: T.accent, fontSize: 13, cursor: 'pointer', fontWeight: 600 }}
-                    >
+                    <button type="button" onClick={() => setStep('login')} style={{ background: 'none', border: 'none', color: T.accent, fontSize: 13, cursor: 'pointer', fontWeight: 600 }}>
                       Sign in
                     </button>
                   </div>
-                  <button
-                    type="button"
-                    onClick={() => setStep('intent')}
-                    style={{ background: 'none', border: 'none', color: T.muted2, fontSize: 13, cursor: 'pointer', marginTop: 2, display: 'flex', alignItems: 'center', gap: 4 }}
-                  >
+                  <button type="button" onClick={() => setStep('intent')} style={{ background: 'none', border: 'none', color: T.muted2, fontSize: 13, cursor: 'pointer', marginTop: 2, display: 'flex', alignItems: 'center', gap: 4 }}>
                     <ArrowLeft size={13} /> Back
                   </button>
                 </form>
@@ -804,24 +808,8 @@ export function Navbar() {
                   Access your GoaRadio for Artists dashboard.
                 </p>
                 <form onSubmit={handleLogin} style={{ display: 'flex', flexDirection: 'column', gap: 14 }}>
-                  <input
-                    className="goa-input"
-                    style={inputStyle}
-                    type="email"
-                    placeholder="Email address"
-                    value={email}
-                    onChange={(e) => setEmail(e.target.value)}
-                    required
-                  />
-                  <input
-                    className="goa-input"
-                    style={inputStyle}
-                    type="password"
-                    placeholder="Password"
-                    value={password}
-                    onChange={(e) => setPassword(e.target.value)}
-                    required
-                  />
+                  <input className="goa-input" style={inputStyle} type="email" placeholder="Email address" value={email} onChange={(e) => setEmail(e.target.value)} required />
+                  <input className="goa-input" style={inputStyle} type="password" placeholder="Password" value={password} onChange={(e) => setPassword(e.target.value)} required />
                   {error && <p style={{ color: '#ff6b6b', fontSize: 13, margin: 0 }}>{error}</p>}
                   <button type="submit" style={btnPrimary} disabled={loading}>
                     <LogIn size={15} />
@@ -837,19 +825,11 @@ export function Navbar() {
                   </button>
                   <div style={{ textAlign: 'center' }}>
                     <span style={{ color: T.muted2, fontSize: 13 }}>No account?{' '}</span>
-                    <button
-                      type="button"
-                      onClick={() => setStep('signup')}
-                      style={{ background: 'none', border: 'none', color: T.accent, fontSize: 13, cursor: 'pointer', fontWeight: 600 }}
-                    >
+                    <button type="button" onClick={() => setStep('signup')} style={{ background: 'none', border: 'none', color: T.accent, fontSize: 13, cursor: 'pointer', fontWeight: 600 }}>
                       Create one
                     </button>
                   </div>
-                  <button
-                    type="button"
-                    onClick={() => setStep('intent')}
-                    style={{ background: 'none', border: 'none', color: T.muted2, fontSize: 13, cursor: 'pointer', marginTop: 2, display: 'flex', alignItems: 'center', gap: 4 }}
-                  >
+                  <button type="button" onClick={() => setStep('intent')} style={{ background: 'none', border: 'none', color: T.muted2, fontSize: 13, cursor: 'pointer', marginTop: 2, display: 'flex', alignItems: 'center', gap: 4 }}>
                     <ArrowLeft size={13} /> Back
                   </button>
                 </form>
