@@ -24,24 +24,24 @@ export function ImageCarousel() {
       alt: 'amayli jpeg',
     },
     {
-      imageUrl: '/images/tidal.png',
-      alt: 'Tidal logo',
+      imageUrl: '/images/chetzy.jpeg',
+      alt: 'chetzy jpeg',
     },
     {
-      imageUrl: '/images/apple-music.png',
-      alt: 'Apple Music logo',
+      imageUrl: '/images/ellson clark.jpg',
+      alt: 'ellson clark jpg',
     },
     {
-      imageUrl: '/images/deezer.png',
-      alt: 'Deezer logo',
+      imageUrl: '/images/faith o'fidel.jpg',
+      alt: 'Faith',
     },
     {
-      imageUrl: '/images/tiktok.png',
-      alt: 'TikTok logo',
+      imageUrl: '/images/gucci pucci.jpg',
+      alt: 'gucci pucci jpg',
     },
     {
-      imageUrl: '/images/youtube.png',
-      alt: 'Youtube logo',
+      imageUrl: '/images/shaypee.jpeg',
+      alt: 'shaypee',
     },
   ]
 
