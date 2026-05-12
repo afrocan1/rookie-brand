@@ -290,7 +290,11 @@ export function Navbar() {
 
             {/* Logo mark */}
             <div
-              style={{ display: 'flex', justifyContent: 'center', marginBottom: 24 }}
+              style={{
+                display: 'flex',
+                justifyContent: 'center',
+                marginBottom: 24,
+              }}
             >
               <div
                 style={{
@@ -302,7 +306,12 @@ export function Navbar() {
                   position: 'relative',
                 }}
               >
-                <Image src={bewave} alt="Goaradio" fill style={{ objectFit: 'cover' }} />
+                <Image
+                  src={bewave}
+                  alt="Goaradio"
+                  fill
+                  style={{ objectFit: 'cover' }}
+                />
               </div>
             </div>
 
@@ -329,7 +338,8 @@ export function Navbar() {
                     lineHeight: 1.6,
                   }}
                 >
-                  Are you an existing artist on Goaradio, or are you joining for the first time?
+                  Are you an existing artist on Goaradio, or are you joining for the
+                  first time?
                 </p>
                 <div
                   style={{ display: 'flex', flexDirection: 'column', gap: 12 }}
@@ -385,7 +395,8 @@ export function Navbar() {
                     lineHeight: 1.6,
                   }}
                 >
-                  We will verify your identity and match you to your existing Goaradio profile. This typically takes 24 hours.
+                  We will verify your identity and match you to your existing Goaradio
+                  profile. This typically takes 24 hours.
                 </p>
                 <form
                   onSubmit={handleClaimSubmit}
@@ -422,7 +433,8 @@ export function Navbar() {
                       lineHeight: 1.6,
                     }}
                   >
-                    Your claim will be reviewed by the Goaradio team. You may be asked for additional verification.
+                    Your claim will be reviewed by the Goaradio team. You may be asked
+                    for additional verification.
                   </p>
                   {error && (
                     <p style={{ color: '#E24B4A', fontSize: 13, margin: 0 }}>
