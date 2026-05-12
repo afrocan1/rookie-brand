@@ -48,20 +48,20 @@ export function ImageCarousel() {
   return (
     <div className="container-carousel mt-[50px]">
       <div className="overflow-hidden" ref={emblaRef}>
-        <div className="flex gap-6">
+        <div className="flex">
           {images.map((image) => (
             <div
               key={image.alt}
-              className="flex-[0_0_40%] md:flex-[0_0_18%] min-w-0 flex items-center justify-center"
+              className="flex-[0_0_45%] md:flex-[0_0_20%] min-w-0 flex items-center justify-center"
             >
-              <div className="relative w-[110px] h-[110px] rounded-full overflow-hidden border border-[#2A2A2A] bg-[#0D0D0D] shadow-[0_0_40px_0px_#1F59D620] flex items-center justify-center">
+              <div className="relative w-[90px] h-[90px] md:w-[110px] md:h-[110px] rounded-full overflow-hidden">
                 <Image
                   src={image.imageUrl}
                   alt={image.alt}
                   fill
                   quality={100}
                   priority
-                  className="object-contain p-5"
+                  className="object-cover"
                 />
               </div>
             </div>
