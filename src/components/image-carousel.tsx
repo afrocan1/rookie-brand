@@ -21,23 +21,23 @@ export function ImageCarousel() {
   const images: ImageTypes[] = [
     {
       imageUrl: '/images/amayli.jpeg',
-      alt: 'amayli jpeg',
+      alt: 'amayli',
     },
     {
       imageUrl: '/images/chetzy.jpeg',
-      alt: 'chetzy jpeg',
+      alt: 'chetzy',
     },
     {
-      imageUrl: '/images/ellson clark.jpg',
-      alt: 'ellson clark jpg',
+      imageUrl: '/images/ellson-clark.jpg',
+      alt: 'ellson clark',
     },
     {
-      imageUrl: '/images/faith o'fidel.jpg',
-      alt: 'Faith',
+      imageUrl: '/images/faith-o-fidel.jpg',
+      alt: 'faith o fidel',
     },
     {
-      imageUrl: '/images/gucci pucci.jpg',
-      alt: 'gucci pucci jpg',
+      imageUrl: '/images/gucci-pucci.jpg',
+      alt: 'gucci pucci',
     },
     {
       imageUrl: '/images/shaypee.jpeg',
