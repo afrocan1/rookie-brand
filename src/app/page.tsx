@@ -72,6 +72,7 @@ export default function Home() {
             <h3 className="text-[18px] font-madefor-display font-bold text-black">
               Everything Artists Need In One Place
             </h3>
+
             <p className="text-[15px]">
               Goaradio for Artists gives creators access to audience insights,
               royalty tracking, engagement tools, and a listener-first streaming
@@ -96,9 +97,11 @@ export default function Home() {
           <h2 className="text-white text-[28px] font-madefor-display font-bold">
             Reach Fans Worldwide
           </h2>
+
           <h3 className="text-beige text-2xl font-madefor-display font-bold mb-4">
             A new generation streaming platform built for discovery
           </h3>
+
           <p className="text-[15px] leading-7">
             Goaradio connects artists with listeners through a transparent and
             community-driven ecosystem. Fans are rewarded for listening while
@@ -175,9 +178,10 @@ export default function Home() {
           <div className="w-full flex items-center gap-10 sm:gap-28">
             <div className="flex flex-col gap-2 text-white font-madefor-display font-bold text-2xl">
               <div className="flex items-center justify-start text-[38px]">
-                <p className="">
-                  <span className="">150</span>
+                <p>
+                  <span>150</span>
                 </p>
+
                 <span>+</span>
               </div>
 
@@ -186,9 +190,10 @@ export default function Home() {
 
             <div className="flex flex-col gap-2 text-white font-madefor-display font-bold text-2xl">
               <div className="flex items-center justify-start text-[38px]">
-                <p className="">
-                  <span className="">75%</span>
+                <p>
+                  <span>75%</span>
                 </p>
+
                 <span>+</span>
               </div>
 
@@ -201,26 +206,33 @@ export default function Home() {
           <div className="max-w-[240px] w-full border border-[#333] rounded-xl text-[13px] p-3">
             <div className="flex items-center justify-between mb-3">
               <p>Traditional Streaming</p>
+
               <span>Big Pool</span>
             </div>
 
-            Other Platforms
+            {'Other Platforms'}
 
             <div className="flex items-center mt-6 gap-3">
               <div className="pl-2 flex flex-col items-center justify-center">
                 <Circle />
+
                 <DashedLine />
+
                 <Circle />
+
                 <DashedLine />
+
                 <Circle />
               </div>
 
               <div className="flex-grow flex flex-col items-start justify-center">
                 <div className="flex flex-col items-center justify-center gap-8">
                   <DistributionCards name="Platform Pooling" />
+
                   <span>Shared revenue</span>
 
                   <DistributionCards name="Lower Artist Share" />
+
                   <span>Industry standard</span>
 
                   <DistributionCards name="Limited Fan Connection" />
@@ -232,26 +244,33 @@ export default function Home() {
           <div className="max-w-[240px] w-full border border-[#333] rounded-xl text-[13px] p-3">
             <div className="flex items-center justify-between mb-3">
               <p>Goaradio Model</p>
+
               <span>Listener First</span>
             </div>
 
-            Goaradio
+            {'Goaradio'}
 
             <div className="flex items-center mt-6 gap-3">
               <div className="pl-2 flex flex-col items-center justify-center">
                 <Circle />
+
                 <DashedLine />
+
                 <Circle />
+
                 <DashedLine />
+
                 <Circle />
               </div>
 
               <div className="flex-grow flex flex-col items-start justify-center">
                 <div className="flex flex-col items-center justify-center gap-8">
                   <DistributionCards name="Direct Artist Support" />
+
                   <span>Fan-based payouts</span>
 
                   <DistributionCards name="Higher Revenue Share" />
+
                   <span>Up to 85%</span>
 
                   <DistributionCards name="Rewarded Fan Engagement" />
