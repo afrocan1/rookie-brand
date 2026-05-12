@@ -14,21 +14,21 @@ import Image from 'next/image'
 const infoCards: CardsProps[] = [
   {
     icon: <AiOutlinePercentage size={42} color="#F5F5F5" />,
-    title: 'Lower Fees, Higher Earnings',
+    title: 'Fairer Revenue Distribution',
     description:
-      'Cutting costs is the first step to increasing your earnings. Take advantage of our competitive commission, high-quality services, and deep knowledge of the digital market to expand your content globally.',
+      'Goaradio uses a listener-first payout model designed to give artists a larger share of revenue based on real fan engagement, not platform-wide stream pools.',
   },
   {
     icon: <LuUser size={42} color="#F5F5F5" />,
-    title: 'Dedicated Support',
+    title: 'Built Around Artists',
     description:
-      'Our support team will help you every step of the way. We are committed to solving any issue or question that may arise, ensuring you have all the support you need for your success.',
+      'From audience growth tools to real-time insights, Goaradio for Artists gives you direct access to the people supporting your music every day.',
   },
   {
     icon: <HiOutlineLightningBolt size={42} color="#F5F5F5" />,
-    title: 'Faster Approval Time',
+    title: 'Instant Global Reach',
     description:
-      'Get your content into stores quickly, taking advantage of new promotion and production opportunities. Our team is dedicated to approving your content in less than 24 hours.',
+      'Release music, podcasts, and audio experiences to a growing global audience while keeping full visibility over streams, rewards, and engagement.',
   },
 ]
 
@@ -37,16 +37,15 @@ export default function Home() {
     <main className="max-w-[1060px] w-full mx-auto">
       <div className="flex flex-col items-center justify-center h-[500px] sm:h-[480px] gap-2">
         <h1 className="text-[45px] font-bold text-center">
-          The future of{' '}
+          Goaradio{' '}
           <span className="gradient-text text-transparent animate-gradient">
-            distribution
+            for Artists
           </span>
         </h1>
 
         <p className="max-w-[675px] w-full text-center text-[18px] leading-7 pb-10 md:pb-2 z-10">
-          The Rookie Brand facilitates the connection between artists and major
-          digital platforms, offering global distribution and specialized
-          support.
+          Build deeper fan connections, earn from real engagement, and grow your
+          audience on a streaming platform designed around artists.
         </p>
 
         <CTAButton />
@@ -71,17 +70,15 @@ export default function Home() {
         <div className="bg-marfin text-black rounded-3xl p-8 flex flex-col md:flex-row items-center justify-center gap:6 md:justify-between md:gap-10">
           <div className="flex flex-col gap-2 max-w-[915px]">
             <h3 className="text-[18px] font-madefor-display font-bold text-black">
-              Label? Explore All the Benefits for Your Artists
+              Everything Artists Need In One Place
             </h3>
             <p className="text-[15px]">
-              Bringing your catalog to The Rookie Brand offers countless
-              benefits. Take advantage of our competitive commission,
-              high-quality services, and deep understanding of the digital
-              market to expand your reach globally. Our platform ensures better
-              earnings, faster approvals, and dedicated support to make sure
-              your artists have everything they need at every stage. Click on
-              &quot;Join Us&quot; and discover everything The Rookie Brand can
-              do to take your artists to the next level.
+              Goaradio for Artists gives creators access to audience insights,
+              royalty tracking, engagement tools, and a listener-first streaming
+              model built for long-term growth. Whether you are building an
+              independent catalog or scaling an established fanbase, Goaradio
+              helps you reach listeners globally while creating stronger artist
+              and fan relationships inside one connected ecosystem.
             </p>
           </div>
 
@@ -97,19 +94,18 @@ export default function Home() {
       >
         <div className="flex flex-col gap-3 lgp:max-w-[480px] w-full">
           <h2 className="text-white text-[28px] font-madefor-display font-bold">
-            Distribute Globally
+            Reach Fans Worldwide
           </h2>
           <h3 className="text-beige text-2xl font-madefor-display font-bold mb-4">
-            We deliver your content to more than 75 stores worldwide
+            A new generation streaming platform built for discovery
           </h3>
           <p className="text-[15px] leading-7">
-            The Rookie Brand partners with the leading music distribution
-            platforms around the world, including Spotify, YouTube, Deezer, and
-            many others. We offer numerous advantages to maximize the visibility
-            of your content. Our platform ensures a strong and efficient
-            relationship with all stores, allowing fast and reliable deliveries.
-            With The Rookie Brand, you&apos;ll enjoy a superior experience,
-            dedicated support, and access to a vast global network.
+            Goaradio connects artists with listeners through a transparent and
+            community-driven ecosystem. Fans are rewarded for listening while
+            artists earn based on real engagement. From curated playlists to
+            personalized recommendations and interactive discovery tools,
+            Goaradio creates more opportunities for your music to travel further
+            and reach the right audience.
           </p>
         </div>
 
@@ -137,21 +133,23 @@ export default function Home() {
             />
           </div>
         </div>
+
         <div className="flex flex-col gap-3 lgp:max-w-[480px] w-full">
           <h2 className="text-white text-[28px] font-madefor-display font-bold">
-            Stay Updated
+            Real-Time Artist Insights
           </h2>
+
           <h3 className="text-purple text-2xl font-madefor-display font-bold mb-4">
-            Simple and Intuitive Dashboard
+            Understand Your Audience Better
           </h3>
+
           <p className="text-[15px] leading-7">
-            The Rookie Brand was developed to simplify and focus on what truly
-            matters for our clients. Every step, from uploading your first track
-            to distribution in stores, comes with interactive and real-time
-            tutorials. We don&apos;t display unnecessary or cluttered
-            information on your dashboard, always ensuring 24/7 uptime. We
-            provide update alerts and partnership programs available on our
-            Marketplace, accessible directly from your dashboard.
+            Track streams, monitor listener activity, measure fan engagement,
+            and follow your growth from one clean dashboard. Goaradio for
+            Artists keeps the experience simple while giving creators access to
+            the data that matters most. Stay updated with audience trends,
+            playlist performance, release activity, and ecosystem rewards in
+            real time.
           </p>
         </div>
       </section>
@@ -159,17 +157,19 @@ export default function Home() {
       <section className="w-full flex flex-col lgp:flex-row items-center justify-center lgp:justify-between gap-12 lgp:gap-20 py-[120px]">
         <div className="flex flex-col gap-3 lgp:max-w-[480px] w-full">
           <h2 className="text-white text-[28px] font-madefor-display font-bold">
-            Turn 15 Days Into 1
+            Built For Long-Term Growth
           </h2>
+
           <h3 className="text-blue text-2xl font-madefor-display font-bold mb-4">
-            We Value Efficiency
+            More Than Just Streaming
           </h3>
+
           <p className="text-[15px] leading-7 mb-5">
-            Say goodbye to the standard distribution process. With The Rookie
-            Brand, you can license your content in just a few hours without
-            worrying about the long approval times other distributors require.
-            License your content and see it available in selected stores the
-            same day.
+            Goaradio combines streaming, community, and rewards into one
+            ecosystem. Artists can grow loyal fanbases, unlock new revenue
+            opportunities, and build stronger relationships with listeners who
+            actively support their music. Every stream becomes part of a more
+            transparent and artist-focused future.
           </p>
 
           <div className="w-full flex items-center gap-10 sm:gap-28">
@@ -180,17 +180,19 @@ export default function Home() {
                 </p>
                 <span>+</span>
               </div>
+
               <p>Countries</p>
             </div>
 
             <div className="flex flex-col gap-2 text-white font-madefor-display font-bold text-2xl">
               <div className="flex items-center justify-start text-[38px]">
                 <p className="">
-                  <span className="">2</span>
+                  <span className="">75%</span>
                 </p>
-                <span>B+</span>
+                <span>+</span>
               </div>
-              <p>Streams</p>
+
+              <p>Artist Revenue Share</p>
             </div>
           </div>
         </div>
@@ -198,10 +200,12 @@ export default function Home() {
         <div className="flex items-center justify-center flex-grow w-full lgp:justify-between gap-8 lgp:gap-0 flex-wrap lgp:w-auto">
           <div className="max-w-[240px] w-full border border-[#333] rounded-xl text-[13px] p-3">
             <div className="flex items-center justify-between mb-3">
-              <p>Standard Distribution</p>
-              <span>10 days</span>
+              <p>Traditional Streaming</p>
+              <span>Big Pool</span>
             </div>
-            Other Distributors
+
+            Other Platforms
+
             <div className="flex items-center mt-6 gap-3">
               <div className="pl-2 flex flex-col items-center justify-center">
                 <Circle />
@@ -210,15 +214,16 @@ export default function Home() {
                 <DashedLine />
                 <Circle />
               </div>
+
               <div className="flex-grow flex flex-col items-start justify-center">
                 <div className="flex flex-col items-center justify-center gap-8">
-                  <DistributionCards name="Approval" />
-                  <span>3 days</span>
+                  <DistributionCards name="Platform Pooling" />
+                  <span>Shared revenue</span>
 
-                  <DistributionCards name="Upload" />
-                  <span>7 days</span>
+                  <DistributionCards name="Lower Artist Share" />
+                  <span>Industry standard</span>
 
-                  <DistributionCards name="Available in Stores" />
+                  <DistributionCards name="Limited Fan Connection" />
                 </div>
               </div>
             </div>
@@ -226,10 +231,12 @@ export default function Home() {
 
           <div className="max-w-[240px] w-full border border-[#333] rounded-xl text-[13px] p-3">
             <div className="flex items-center justify-between mb-3">
-              <p>Future of Distribution</p>
-              <span>1 day</span>
+              <p>Goaradio Model</p>
+              <span>Listener First</span>
             </div>
-            The Rookie Brand
+
+            Goaradio
+
             <div className="flex items-center mt-6 gap-3">
               <div className="pl-2 flex flex-col items-center justify-center">
                 <Circle />
@@ -238,15 +245,16 @@ export default function Home() {
                 <DashedLine />
                 <Circle />
               </div>
+
               <div className="flex-grow flex flex-col items-start justify-center">
                 <div className="flex flex-col items-center justify-center gap-8">
-                  <DistributionCards name="Approval" />
-                  <span>120 minutes</span>
+                  <DistributionCards name="Direct Artist Support" />
+                  <span>Fan-based payouts</span>
 
-                  <DistributionCards name="Upload" />
-                  <span>1 day</span>
+                  <DistributionCards name="Higher Revenue Share" />
+                  <span>Up to 85%</span>
 
-                  <DistributionCards name="Available in Stores*" />
+                  <DistributionCards name="Rewarded Fan Engagement" />
                 </div>
               </div>
             </div>
