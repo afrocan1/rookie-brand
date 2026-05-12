@@ -12,7 +12,7 @@ type NavbarMenuType = {
 export function Navbar() {
   const menus: NavbarMenuType[] = [
     {
-      name: 'Vantagens',
+      name: 'Get Started',
       url: '/#vantagens',
     },
     {
