@@ -1,4 +1,5 @@
 'use client'
+
 import useEmblaCarousel from 'embla-carousel-react'
 import Autoscroll from 'embla-carousel-auto-scroll'
 import Image from 'next/image'
@@ -47,20 +48,20 @@ export function ImageCarousel() {
   return (
     <div className="container-carousel mt-[50px]">
       <div className="overflow-hidden" ref={emblaRef}>
-        <div className="flex">
+        <div className="flex gap-6">
           {images.map((image) => (
             <div
               key={image.alt}
-              className="flex-[0_0_45%] md:flex-[0_0_20%] h-[100px] min-w-0 flex items-center justify-center"
+              className="flex-[0_0_40%] md:flex-[0_0_18%] min-w-0 flex items-center justify-center"
             >
-              <div className="w-[160px] h-[40px] relative">
+              <div className="relative w-[110px] h-[110px] rounded-full overflow-hidden border border-[#2A2A2A] bg-[#0D0D0D] shadow-[0_0_40px_0px_#1F59D620] flex items-center justify-center">
                 <Image
                   src={image.imageUrl}
                   alt={image.alt}
                   fill
                   quality={100}
                   priority
-                  className="aspect-square object-cover"
+                  className="object-contain p-5"
                 />
               </div>
             </div>
