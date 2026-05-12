@@ -337,7 +337,7 @@ export function Navbar() {
           Claim your artist profile
         </h2>
         <p style={{ color: T.muted, fontSize: 13, margin: '0 0 16px', lineHeight: 1.6 }}>
-          We found these artists on GoaRadio. Select yours to claim it.
+          We found these artists on Goaradio. Select yours to claim it.
         </p>
 
         <div style={{ position: 'relative', marginBottom: 12 }}>
@@ -401,7 +401,7 @@ export function Navbar() {
                       {artist.name}
                     </div>
                     <div style={{ fontSize: 12, color: T.muted, marginTop: 2 }}>
-                      {artist.tracks} tracks on GoaRadio
+                      {artist.tracks} tracks on Goaradio
                     </div>
                   </div>
                   <div style={{
@@ -423,7 +423,7 @@ export function Navbar() {
 
         <div style={{ display: 'flex', gap: 10 }}>
           <button onClick={handleSkipClaim} style={{ ...btnSecondary, flex: 1, fontSize: 13 }}>
-            Not on GoaRadio yet
+            Not on Goaradio yet
           </button>
           <button
             onClick={handleClaimContinue}
@@ -453,7 +453,7 @@ export function Navbar() {
           {[
             { href: 'https://instagram.com/goaradio_', icon: <Instagram size={15} />, label: 'DM @goaradio_ on Instagram' },
             { href: 'https://x.com/goaradio_',         icon: <Twitter size={15} />,   label: 'DM @goaradio_ on X' },
-            { href: 'mailto:artists@goaradio.org',      icon: <Mail size={15} />,      label: 'Email artists@goaradio.org' },
+            { href: 'mailto:info@goaradio.org',      icon: <Mail size={15} />,      label: 'Email info@goaradio.org' },
           ].map((item) => (
             <a
               key={item.href}
@@ -481,7 +481,7 @@ export function Navbar() {
           alignItems:   'flex-start',
         }}>
           <Clock size={14} style={{ flexShrink: 0, marginTop: 2 }} />
-          Include your GoaRadio artist name and the email you signed up with. We verify within 24–48 hours.
+          Include your Goaradio artist name and the email you signed up with. We verify within 24–48 hours.
         </div>
 
         <div style={{ display: 'flex', gap: 10 }}>
@@ -518,7 +518,7 @@ export function Navbar() {
           You&apos;re all set!
         </h2>
         <p style={{ color: T.muted, fontSize: 13, margin: '0 0 24px', lineHeight: 1.6 }}>
-          Your profile is in pending verification mode. You can edit everything — changes go live on GoaRadio once you&apos;re verified.
+          Your profile is in pending verification mode. You can edit everything — changes go live on Goaradio once you&apos;re verified.
         </p>
         <a href="/dashboard" style={{ ...btnPrimary, textDecoration: 'none', display: 'flex' }}>
           <TrendingUp size={15} /> Go to Dashboard
@@ -731,14 +731,14 @@ export function Navbar() {
             {step === 'intent' && (
               <>
                 <h2 style={{ color: T.text, fontSize: 20, fontWeight: 700, textAlign: 'center', margin: '0 0 6px', fontFamily: "'Syne', sans-serif" }}>
-                  Welcome to GoaRadio for Artists
+                  Welcome to Goaradio for Artists
                 </h2>
                 <p style={{ color: T.muted, fontSize: 13, textAlign: 'center', margin: '0 0 28px', lineHeight: 1.6 }}>
-                  Are you an existing artist on GoaRadio, or joining for the first time?
+                  Are you an existing artist on Goaradio, or joining for the first time?
                 </p>
                 <div style={{ display: 'flex', flexDirection: 'column', gap: 10 }}>
                   <button onClick={() => { setStep('claim-pick'); setError('') }} style={btnPrimary}>
-                    <Mic2 size={16} /> Claim my GoaRadio profile
+                    <Mic2 size={16} /> Claim my Goaradio profile
                   </button>
                   <button onClick={() => setStep('signup')} style={btnSecondary}>
                     <Sparkles size={16} /> I&apos;m a new artist
@@ -767,7 +767,7 @@ export function Navbar() {
                   Create your artist account
                 </h2>
                 <p style={{ color: T.muted, fontSize: 13, textAlign: 'center', margin: '0 0 24px', lineHeight: 1.6 }}>
-                  Start earning from your music on GoaRadio.
+                  Start earning from your music on Goaradio.
                 </p>
                 <form onSubmit={handleSignup} style={{ display: 'flex', flexDirection: 'column', gap: 14 }}>
                   <input className="goa-input" style={inputStyle} type="email" placeholder="Email address" value={email} onChange={(e) => setEmail(e.target.value)} required />
@@ -805,7 +805,7 @@ export function Navbar() {
                   Sign in
                 </h2>
                 <p style={{ color: T.muted, fontSize: 13, textAlign: 'center', margin: '0 0 24px', lineHeight: 1.6 }}>
-                  Access your GoaRadio for Artists dashboard.
+                  Access your Goaradio for Artists dashboard.
                 </p>
                 <form onSubmit={handleLogin} style={{ display: 'flex', flexDirection: 'column', gap: 14 }}>
                   <input className="goa-input" style={inputStyle} type="email" placeholder="Email address" value={email} onChange={(e) => setEmail(e.target.value)} required />
