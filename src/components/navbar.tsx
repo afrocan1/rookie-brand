@@ -24,7 +24,7 @@ export function Navbar() {
     <header className="max-w-[1060px] w-full px-5 py-3 shadow-[0_-1px_0_1px_#33333350] bg-black/30 backdrop-blur-[10px] fixed z-40 top-[18px] left-1/2 -translate-x-1/2 flex items-center justify-between rounded-2xl">
       <Link
         href="/"
-        className="flex items-center justify-center flex-shrink-0"
+        className="flex-shrink-0 flex items-center justify-center"
       >
         <div className="relative w-[52px] h-[52px] rounded-full overflow-hidden border border-[#2A2A2A] bg-[#0A0A0A]">
           <Image
@@ -40,15 +40,14 @@ export function Navbar() {
 
       <ul className="flex items-center justify-center gap-6">
         {menus.map((menu) => (
-          <Link
-            key={menu.name}
-            href={menu.url}
-            className="text-marfin hover:text-white hover:underline focus:text-white focus:underline underline-offset-2 transition-all duration-200"
-          >
-            <li className="text-sm font-nunito-sans font-normal">
+          <li key={menu.name} className="list-none">
+            <Link
+              href={menu.url}
+              className="text-marfin hover:text-white hover:underline focus:text-white focus:underline underline-offset-2 transition-all duration-200 text-sm font-nunito-sans font-normal"
+            >
               {menu.name}
-            </li>
-          </Link>
+            </Link>
+          </li>
         ))}
       </ul>
     </header>
