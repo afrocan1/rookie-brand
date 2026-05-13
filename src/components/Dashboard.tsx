@@ -1,7 +1,6 @@
 'use client'
 
 import { useState, useEffect, useCallback } from 'react'
-import Link from 'next/link'
 import { useRouter } from 'next/navigation'
 import {
   onAuthStateChanged,
@@ -172,19 +171,45 @@ export default function Dashboard() {
   // ── Auth guard ───────────────────────────────────────────────────────────
   useEffect(() => {
     const unsub = onAuthStateChanged(auth, async (user) => {
+      console.log('[Dashboard] auth state:', user ? `uid=${user.uid}` : 'null')
+
       if (!user) {
+        console.log('[Dashboard] no user → redirecting home')
         router.replace('/')
         return
       }
-      const snap = await getDoc(doc(db, 'artists', user.uid))
-      if (!snap.exists() || !snap.data()?.artistName) {
-        router.replace('/')
-        return
+
+      // Retry up to 3 times with delay — handles race condition where navbar
+      // hasn't finished writing the Firestore doc yet when dashboard mounts
+      let data: ProfileData = {}
+      let attempts = 0
+      while (attempts < 3) {
+        try {
+          console.log(`[Dashboard] fetching Firestore doc, attempt ${attempts + 1}`)
+          const snap = await getDoc(doc(db, 'artists', user.uid))
+          if (snap.exists()) {
+            data = snap.data() as ProfileData
+            console.log('[Dashboard] Firestore doc found:', data)
+            break
+          } else {
+            console.log('[Dashboard] doc does not exist yet, waiting...')
+          }
+        } catch (err) {
+          console.error('[Dashboard] Firestore error:', err)
+        }
+        attempts++
+        if (attempts < 3) await new Promise(r => setTimeout(r, 800))
       }
-      const data = snap.data() as ProfileData
+
+      // Even if Firestore doc is missing or has no artistName, let the user in
+      // using their Firebase Auth display name as a fallback. Never kick them
+      // out just because the doc write hasn't landed yet.
+      const resolvedName = data.artistName || user.displayName || user.email?.split('@')[0] || 'Artist'
+      console.log('[Dashboard] resolved artist name:', resolvedName)
+
       setProfileData(data)
-      setArtistName(data.artistName || user.displayName || 'Artist')
-      setProfArtistName(data.artistName || '')
+      setArtistName(resolvedName)
+      setProfArtistName(data.artistName || resolvedName)
       setProfBio(data.bio || '')
       setProfGenre(data.genre || '')
       setProfInstagram(data.instagram || '')
