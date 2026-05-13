@@ -782,7 +782,7 @@ export default function Dashboard() {
         </div>
 
         <div style={{ ...card, marginBottom: 20 }}>
-          <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between', marginBottom: 18 }}>
+          <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between', marginBottom: 18, flexWrap: 'wrap', gap: 8 }}>
             <h2 style={{ fontFamily: "'Poppins', sans-serif", fontSize: 16, fontWeight: 700, color: T.text, margin: 0 }}>Top Tracks</h2>
             <span style={{ display: 'flex', alignItems: 'center', gap: 5, fontSize: 12, color: T.success, fontWeight: 600 }}>
               <span style={{ width: 6, height: 6, borderRadius: '50%', background: T.success, display: 'inline-block', animation: 'pulseDot 2s infinite' }} />
@@ -802,7 +802,7 @@ export default function Dashboard() {
             tracks.slice(0, 5).map((t, i) => <TrackRow key={t.id} track={t} index={i} showActions={false} />)
           )}
           {tracks.length > 0 && (
-            <button onClick={() => setCurrentPage('tracks')} style={{ ...btnGhost, marginTop: 14, fontSize: 13 }}>
+            <button onClick={() => setCurrentPage('tracks')} style={{ ...btnGhost, marginTop: 14, fontSize: 13, width: '100%', justifyContent: 'center' }}>
               View all tracks <ChevronRight size={13} />
             </button>
           )}
