@@ -10,6 +10,7 @@ import {
   GoogleAuthProvider,
   signInWithPopup,
   signOut,
+  updateProfile,
 } from 'firebase/auth'
 import { doc, setDoc } from 'firebase/firestore'
 import { auth, db } from '@/lib/firebase'
@@ -31,13 +32,21 @@ import {
   PartyPopper,
   Clock,
   X,
+  User,
+  Lock,
+  Phone,
+  Globe,
+  FileText,
+  Eye,
+  EyeOff,
+  ChevronRight,
 } from 'lucide-react'
 
 // ─── Airtable config ──────────────────────────────────────────────────────────
 const AT_TOKEN = 'patnr2Fyn9ZVlRavH.e54394ac6075004f3bf0d7f84a5b1a1f8bc0fbb3b2e664e487fd9d05b3bfd8e5'
 const BASE_ID  = 'appg5mgqnhZPJKDXR'
 
-type Step = 'intent' | 'login' | 'signup' | 'claim-pick' | 'claim-verify' | 'claim-done'
+type Step = 'intent' | 'login' | 'signup' | 'claim-pick' | 'claim-details' | 'claim-verify' | 'claim-done'
 
 interface AirtableArtist {
   id: string
@@ -75,11 +84,26 @@ const T = {
   success: '#22c55e',
 }
 
+const COUNTRIES = [
+  'Ghana','Nigeria','Kenya','South Africa','Uganda','Tanzania','Ethiopia','Cameroon',
+  'Senegal','Côte d\'Ivoire','Rwanda','Zambia','Zimbabwe','Mozambique','Angola',
+  'United Kingdom','United States','Canada','France','Germany','Netherlands',
+  'Australia','Brazil','Other',
+]
+
+const GENRES = [
+  'Afrobeats','Afropop','Highlife','Dancehall','Hip Hop','Amapiano',
+  'Gospel','R&B','Reggae','Drill','Trap','Afro-Soul','Bongo Flava','Other',
+]
+
 export function Navbar() {
   const [modalOpen, setModalOpen]             = useState(false)
   const [step, setStep]                       = useState<Step>('intent')
   const [email, setEmail]                     = useState('')
   const [password, setPassword]               = useState('')
+  const [showPass, setShowPass]               = useState(false)
+  const [showConfirm, setShowConfirm]         = useState(false)
+  const [confirmPassword, setConfirmPassword] = useState('')
   const [error, setError]                     = useState('')
   const [loading, setLoading]                 = useState(false)
   const [isLoggedIn, setIsLoggedIn]           = useState(false)
@@ -90,6 +114,19 @@ export function Navbar() {
   const [selectedArtist, setSelectedArtist]   = useState<AirtableArtist | null>(null)
   const [isSmall, setIsSmall]                 = useState(false)
 
+  // ── Claim details state ────────────────────────────────────────────────
+  const [claimFullName, setClaimFullName]     = useState('')
+  const [claimStageName, setClaimStageName]   = useState('')
+  const [claimEmail, setClaimEmail]           = useState('')
+  const [claimPhone, setClaimPhone]           = useState('')
+  const [claimCountry, setClaimCountry]       = useState('')
+  const [claimGenre, setClaimGenre]           = useState('')
+  const [claimBio, setClaimBio]               = useState('')
+  const [claimPassword, setClaimPassword]     = useState('')
+  const [claimConfirm, setClaimConfirm]       = useState('')
+  const [showClaimPass, setShowClaimPass]     = useState(false)
+  const [showClaimConfirm, setShowClaimConfirm] = useState(false)
+
   const overlayRef = useRef<HTMLDivElement>(null)
 
   useEffect(() => {
@@ -97,7 +134,6 @@ export function Navbar() {
     return unsub
   }, [])
 
-  // ── Detect small screens ──────────────────────────────────────────────────
   useEffect(() => {
     function check() { setIsSmall(window.innerWidth < 500) }
     check()
@@ -134,6 +170,14 @@ export function Navbar() {
     )
   }, [searchQuery, allArtists])
 
+  // Pre-fill stage name from selected artist
+  useEffect(() => {
+    if (selectedArtist && !claimStageName) {
+      setClaimStageName(selectedArtist.name)
+    }
+  // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [selectedArtist])
+
   function openModal() {
     setStep('intent')
     resetForm()
@@ -147,11 +191,11 @@ export function Navbar() {
   }
 
   function resetForm() {
-    setEmail('')
-    setPassword('')
-    setError('')
-    setSelectedArtist(null)
-    setSearchQuery('')
+    setEmail(''); setPassword(''); setConfirmPassword(''); setError('')
+    setSelectedArtist(null); setSearchQuery('')
+    setClaimFullName(''); setClaimStageName(''); setClaimEmail('')
+    setClaimPhone(''); setClaimCountry(''); setClaimGenre('')
+    setClaimBio(''); setClaimPassword(''); setClaimConfirm('')
   }
 
   function handleOverlayClick(e: React.MouseEvent) {
@@ -160,32 +204,27 @@ export function Navbar() {
 
   async function handleLogin(e: React.FormEvent) {
     e.preventDefault()
-    setError('')
-    setLoading(true)
+    setError(''); setLoading(true)
     try {
       await signInWithEmailAndPassword(auth, email, password)
       setIsLoggedIn(true)
       closeModal()
     } catch (err: unknown) {
       setError(friendlyError((err as { code: string }).code))
-    } finally {
-      setLoading(false)
-    }
+    } finally { setLoading(false) }
   }
 
   async function handleSignup(e: React.FormEvent) {
     e.preventDefault()
-    setError('')
-    setLoading(true)
+    if (password !== confirmPassword) { setError('Passwords do not match.'); return }
+    setError(''); setLoading(true)
     try {
       await createUserWithEmailAndPassword(auth, email, password)
       setIsLoggedIn(true)
       closeModal()
     } catch (err: unknown) {
       setError(friendlyError((err as { code: string }).code))
-    } finally {
-      setLoading(false)
-    }
+    } finally { setLoading(false) }
   }
 
   async function handleGoogleLogin() {
@@ -200,9 +239,47 @@ export function Navbar() {
     }
   }
 
-  async function handleClaimContinue() {
+  // ── Claim: pick → details ─────────────────────────────────────────────
+  function handleClaimContinueFromPick() {
     if (!selectedArtist) return
-    setStep('claim-verify')
+    setClaimStageName(selectedArtist.name)
+    setError('')
+    setStep('claim-details')
+  }
+
+  // ── Claim: details → verify (creates account) ─────────────────────────
+  async function handleClaimDetailsSubmit(e: React.FormEvent) {
+    e.preventDefault()
+    if (!claimFullName.trim()) { setError('Full name is required.'); return }
+    if (!claimEmail.trim())    { setError('Email is required.'); return }
+    if (claimPassword.length < 6) { setError('Password must be at least 6 characters.'); return }
+    if (claimPassword !== claimConfirm) { setError('Passwords do not match.'); return }
+
+    setError(''); setLoading(true)
+    try {
+      const cred = await createUserWithEmailAndPassword(auth, claimEmail.trim(), claimPassword)
+      // Set display name
+      await updateProfile(cred.user, { displayName: claimStageName || claimFullName })
+
+      // Write initial Firestore doc
+      await setDoc(doc(db, 'artists', cred.user.uid), {
+        artistName:  claimStageName || claimFullName,
+        fullName:    claimFullName,
+        email:       claimEmail.trim(),
+        phone:       claimPhone,
+        country:     claimCountry,
+        genre:       claimGenre,
+        bio:         claimBio,
+        airtableId:  selectedArtist?.id || '',
+        verified:    false,
+        claimedAt:   new Date().toISOString(),
+      })
+
+      setIsLoggedIn(true)
+      setStep('claim-verify')
+    } catch (err: unknown) {
+      setError(friendlyError((err as { code: string }).code))
+    } finally { setLoading(false) }
   }
 
   async function handleClaimSent() {
@@ -210,13 +287,7 @@ export function Navbar() {
     if (user && selectedArtist) {
       await setDoc(
         doc(db, 'artists', user.uid),
-        {
-          artistName: selectedArtist.name,
-          airtableId: selectedArtist.id,
-          email:      user.email,
-          verified:   false,
-          claimedAt:  new Date().toISOString(),
-        },
+        { verificationRequested: true, updatedAt: new Date().toISOString() },
         { merge: true },
       )
     }
@@ -298,16 +369,17 @@ export function Navbar() {
     transition:     'background 0.2s',
   }
 
-  // ─── Step dots ────────────────────────────────────────────────────────────
+  // ─── Step dots (now 4 steps for claim flow) ───────────────────────────────
   function StepDots({ current }: { current: number }) {
+    const total = 4
     return (
-      <div style={{ display: 'flex', gap: 8, marginBottom: 24, alignItems: 'center' }}>
-        {[0, 1, 2].map((i) => (
+      <div style={{ display: 'flex', gap: 7, marginBottom: 24, alignItems: 'center' }}>
+        {Array.from({ length: total }).map((_, i) => (
           <div
             key={i}
             style={{
-              height:       8,
-              width:        i === current ? 24 : 8,
+              height:       7,
+              width:        i === current ? 22 : 7,
               borderRadius: i === current ? 4 : '50%',
               background:   i < current ? T.success : i === current ? T.accent : T.muted2,
               transition:   'all 0.3s',
@@ -352,7 +424,7 @@ export function Navbar() {
           />
         </div>
 
-        <div style={{ maxHeight: 300, overflowY: 'auto', display: 'flex', flexDirection: 'column', gap: 8, marginBottom: 16, paddingRight: 2 }}>
+        <div style={{ maxHeight: 280, overflowY: 'auto', display: 'flex', flexDirection: 'column', gap: 8, marginBottom: 16, paddingRight: 2 }}>
           {artistsLoading ? (
             <div style={{ textAlign: 'center', padding: '32px 0', color: T.muted, fontSize: 14, display: 'flex', alignItems: 'center', justifyContent: 'center', gap: 8 }}>
               <span style={{
@@ -426,13 +498,218 @@ export function Navbar() {
             Not on Goaradio yet
           </button>
           <button
-            onClick={handleClaimContinue}
+            onClick={handleClaimContinueFromPick}
             disabled={!selectedArtist}
             style={{ ...btnPrimary, flex: 1, opacity: selectedArtist ? 1 : 0.4, cursor: selectedArtist ? 'pointer' : 'not-allowed' }}
           >
-            Continue
+            Continue <ChevronRight size={14} />
           </button>
         </div>
+      </>
+    )
+  }
+
+  // ─── Claim Details ────────────────────────────────────────────────────────
+  function renderClaimDetails() {
+    const labelStyle: React.CSSProperties = {
+      fontSize: 12, color: T.muted, display: 'block', marginBottom: 5, fontWeight: 500,
+    }
+    const fieldWrap: React.CSSProperties = { display: 'flex', flexDirection: 'column', gap: 0 }
+    const passWrap: React.CSSProperties = { position: 'relative' }
+    const eyeBtn: React.CSSProperties = {
+      position: 'absolute', right: 12, top: '50%', transform: 'translateY(-50%)',
+      background: 'none', border: 'none', color: T.muted, cursor: 'pointer',
+      display: 'flex', alignItems: 'center', padding: 0,
+    }
+
+    // Selected artist mini badge
+    const avatarUrl = selectedArtist?.cover ||
+      `https://ui-avatars.com/api/?name=${encodeURIComponent(selectedArtist?.name ?? '')}&background=1a1a1a&color=ffd700&size=100`
+
+    return (
+      <>
+        <StepDots current={1} />
+        <h2 style={{ color: T.text, fontSize: 20, fontWeight: 700, margin: '0 0 4px', fontFamily: "'Syne', sans-serif" }}>
+          Complete your profile
+        </h2>
+        <p style={{ color: T.muted, fontSize: 13, margin: '0 0 16px', lineHeight: 1.6 }}>
+          Tell us about yourself and create your account password.
+        </p>
+
+        {/* Selected artist badge */}
+        {selectedArtist && (
+          <div style={{
+            display: 'flex', alignItems: 'center', gap: 10,
+            padding: '10px 12px', background: 'rgba(255,215,0,0.06)',
+            border: `1px solid rgba(255,215,0,0.18)`, borderRadius: 10, marginBottom: 18,
+          }}>
+            <img src={avatarUrl} alt={selectedArtist.name}
+              onError={(e) => { (e.target as HTMLImageElement).src = `https://ui-avatars.com/api/?name=${encodeURIComponent(selectedArtist.name)}&background=1a1a1a&color=ffd700&size=100` }}
+              style={{ width: 36, height: 36, borderRadius: '50%', objectFit: 'cover', background: T.bg3 }}
+            />
+            <div>
+              <div style={{ fontSize: 13, fontWeight: 600, color: T.text }}>{selectedArtist.name}</div>
+              <div style={{ fontSize: 11, color: T.accent }}>Selected for claiming</div>
+            </div>
+            <button onClick={() => setStep('claim-pick')} style={{ marginLeft: 'auto', background: 'none', border: 'none', color: T.muted, cursor: 'pointer', display: 'flex', padding: 0 }}>
+              <X size={14} />
+            </button>
+          </div>
+        )}
+
+        <form onSubmit={handleClaimDetailsSubmit} style={{ display: 'flex', flexDirection: 'column', gap: 13 }}>
+          {/* Row: Full name + Stage name */}
+          <div style={{ display: 'grid', gridTemplateColumns: '1fr 1fr', gap: 10 }}>
+            <div style={fieldWrap}>
+              <label style={labelStyle}><User size={11} style={{ display: 'inline', marginRight: 4 }} />Full Name *</label>
+              <input className="goa-input" style={inputStyle} type="text" placeholder="Your real name" value={claimFullName} onChange={e => setClaimFullName(e.target.value)} required />
+            </div>
+            <div style={fieldWrap}>
+              <label style={labelStyle}><Mic2 size={11} style={{ display: 'inline', marginRight: 4 }} />Stage Name *</label>
+              <input className="goa-input" style={inputStyle} type="text" placeholder="Artist name" value={claimStageName} onChange={e => setClaimStageName(e.target.value)} required />
+            </div>
+          </div>
+
+          {/* Email */}
+          <div style={fieldWrap}>
+            <label style={labelStyle}><Mail size={11} style={{ display: 'inline', marginRight: 4 }} />Email Address *</label>
+            <input className="goa-input" style={inputStyle} type="email" placeholder="you@example.com" value={claimEmail} onChange={e => setClaimEmail(e.target.value)} required />
+          </div>
+
+          {/* Row: Phone + Country */}
+          <div style={{ display: 'grid', gridTemplateColumns: '1fr 1fr', gap: 10 }}>
+            <div style={fieldWrap}>
+              <label style={labelStyle}><Phone size={11} style={{ display: 'inline', marginRight: 4 }} />Phone</label>
+              <input className="goa-input" style={inputStyle} type="tel" placeholder="+233..." value={claimPhone} onChange={e => setClaimPhone(e.target.value)} />
+            </div>
+            <div style={fieldWrap}>
+              <label style={labelStyle}><Globe size={11} style={{ display: 'inline', marginRight: 4 }} />Country</label>
+              <select className="goa-input" style={{ ...inputStyle, appearance: 'none' as const }} value={claimCountry} onChange={e => setClaimCountry(e.target.value)}>
+                <option value="">Select country</option>
+                {COUNTRIES.map(c => <option key={c} value={c}>{c}</option>)}
+              </select>
+            </div>
+          </div>
+
+          {/* Genre */}
+          <div style={fieldWrap}>
+            <label style={labelStyle}><Mic2 size={11} style={{ display: 'inline', marginRight: 4 }} />Primary Genre</label>
+            <select className="goa-input" style={{ ...inputStyle, appearance: 'none' as const }} value={claimGenre} onChange={e => setClaimGenre(e.target.value)}>
+              <option value="">Select genre</option>
+              {GENRES.map(g => <option key={g} value={g}>{g}</option>)}
+            </select>
+          </div>
+
+          {/* Bio */}
+          <div style={fieldWrap}>
+            <label style={labelStyle}><FileText size={11} style={{ display: 'inline', marginRight: 4 }} />Short Bio</label>
+            <textarea
+              className="goa-input"
+              style={{ ...inputStyle, resize: 'vertical', minHeight: 72 }}
+              placeholder="Tell fans about yourself..."
+              value={claimBio}
+              onChange={e => setClaimBio(e.target.value)}
+              rows={3}
+            />
+          </div>
+
+          {/* Divider */}
+          <div style={{ display: 'flex', alignItems: 'center', gap: 10 }}>
+            <div style={{ flex: 1, height: 1, background: T.border }} />
+            <span style={{ fontSize: 11, color: T.muted2, display: 'flex', alignItems: 'center', gap: 5 }}>
+              <Lock size={11} /> Create your password
+            </span>
+            <div style={{ flex: 1, height: 1, background: T.border }} />
+          </div>
+
+          {/* Password */}
+          <div style={fieldWrap}>
+            <label style={labelStyle}>Password * (min 6 characters)</label>
+            <div style={passWrap}>
+              <input
+                className="goa-input"
+                style={{ ...inputStyle, paddingRight: 42 }}
+                type={showClaimPass ? 'text' : 'password'}
+                placeholder="Create a strong password"
+                value={claimPassword}
+                onChange={e => setClaimPassword(e.target.value)}
+                required
+                minLength={6}
+              />
+              <button type="button" style={eyeBtn} onClick={() => setShowClaimPass(p => !p)}>
+                {showClaimPass ? <EyeOff size={14} /> : <Eye size={14} />}
+              </button>
+            </div>
+            {/* Strength bar */}
+            {claimPassword.length > 0 && (
+              <div style={{ marginTop: 6 }}>
+                <div style={{ height: 3, borderRadius: 2, background: T.border2, overflow: 'hidden' }}>
+                  <div style={{
+                    height: '100%',
+                    width: claimPassword.length < 6 ? '25%' : claimPassword.length < 10 ? '60%' : '100%',
+                    background: claimPassword.length < 6 ? '#ef4444' : claimPassword.length < 10 ? '#f59e0b' : T.success,
+                    borderRadius: 2, transition: 'all 0.3s',
+                  }} />
+                </div>
+                <span style={{ fontSize: 11, color: claimPassword.length < 6 ? '#ef4444' : claimPassword.length < 10 ? '#f59e0b' : T.success, marginTop: 3, display: 'block' }}>
+                  {claimPassword.length < 6 ? 'Too short' : claimPassword.length < 10 ? 'Good' : 'Strong'}
+                </span>
+              </div>
+            )}
+          </div>
+
+          {/* Confirm password */}
+          <div style={fieldWrap}>
+            <label style={labelStyle}>Confirm Password *</label>
+            <div style={passWrap}>
+              <input
+                className="goa-input"
+                style={{
+                  ...inputStyle, paddingRight: 42,
+                  borderColor: claimConfirm && claimConfirm !== claimPassword ? '#ef4444' : claimConfirm && claimConfirm === claimPassword ? T.success : undefined,
+                }}
+                type={showClaimConfirm ? 'text' : 'password'}
+                placeholder="Repeat your password"
+                value={claimConfirm}
+                onChange={e => setClaimConfirm(e.target.value)}
+                required
+              />
+              <button type="button" style={eyeBtn} onClick={() => setShowClaimConfirm(p => !p)}>
+                {showClaimConfirm ? <EyeOff size={14} /> : <Eye size={14} />}
+              </button>
+            </div>
+            {claimConfirm && claimConfirm !== claimPassword && (
+              <span style={{ fontSize: 11, color: '#ef4444', marginTop: 3, display: 'block' }}>Passwords don&apos;t match</span>
+            )}
+            {claimConfirm && claimConfirm === claimPassword && (
+              <span style={{ fontSize: 11, color: T.success, marginTop: 3, display: 'block', display: 'flex', alignItems: 'center', gap: 4 } as React.CSSProperties}>
+                <Check size={11} /> Passwords match
+              </span>
+            )}
+          </div>
+
+          {error && <p style={{ color: '#ff6b6b', fontSize: 13, margin: 0 }}>{error}</p>}
+
+          <div style={{ display: 'flex', gap: 10, marginTop: 4 }}>
+            <button
+              type="button"
+              onClick={() => { setStep('claim-pick'); setError('') }}
+              style={{ ...btnSecondary, flex: '0 0 44px', width: 44, padding: 0 }}
+            >
+              <ArrowLeft size={16} />
+            </button>
+            <button type="submit" style={{ ...btnPrimary, flex: 1, opacity: loading ? 0.7 : 1 }} disabled={loading}>
+              {loading ? (
+                <span style={{
+                  width: 16, height: 16, borderRadius: '50%',
+                  border: `2px solid rgba(0,0,0,0.2)`, borderTopColor: '#000',
+                  display: 'inline-block', animation: 'spin 0.7s linear infinite',
+                }} />
+              ) : <ChevronRight size={15} />}
+              {loading ? 'Creating account…' : 'Continue'}
+            </button>
+          </div>
+        </form>
       </>
     )
   }
@@ -441,19 +718,19 @@ export function Navbar() {
   function renderClaimVerify() {
     return (
       <>
-        <StepDots current={1} />
+        <StepDots current={2} />
         <h2 style={{ color: T.text, fontSize: 20, fontWeight: 700, margin: '0 0 6px', fontFamily: "'Syne', sans-serif" }}>
           Verify your identity
         </h2>
         <p style={{ color: T.muted, fontSize: 13, margin: '0 0 20px', lineHeight: 1.6 }}>
-          To verify you own <strong style={{ color: T.text }}>{selectedArtist?.name}</strong>&apos;s profile, send us a DM from a verified social or email us.
+          To verify you own <strong style={{ color: T.text }}>{selectedArtist?.name || claimStageName}</strong>&apos;s profile, send us a DM from a verified social or email us.
         </p>
 
         <div style={{ display: 'flex', flexDirection: 'column', gap: 10, marginBottom: 16 }}>
           {[
             { href: 'https://instagram.com/goaradio_', icon: <Instagram size={15} />, label: 'DM @goaradio_ on Instagram' },
             { href: 'https://x.com/goaradio_',         icon: <Twitter size={15} />,   label: 'DM @goaradio_ on X' },
-            { href: 'mailto:info@goaradio.org',      icon: <Mail size={15} />,      label: 'Email info@goaradio.org' },
+            { href: 'mailto:info@goaradio.org',        icon: <Mail size={15} />,      label: 'Email info@goaradio.org' },
           ].map((item) => (
             <a
               key={item.href}
@@ -485,7 +762,7 @@ export function Navbar() {
         </div>
 
         <div style={{ display: 'flex', gap: 10 }}>
-          <button onClick={() => setStep('claim-pick')} style={{ ...btnSecondary, flex: '0 0 44px', width: 44, padding: 0 }}>
+          <button onClick={() => setStep('claim-details')} style={{ ...btnSecondary, flex: '0 0 44px', width: 44, padding: 0 }}>
             <ArrowLeft size={16} />
           </button>
           <button onClick={handleClaimSent} style={{ ...btnPrimary, flex: 1 }}>
@@ -500,7 +777,7 @@ export function Navbar() {
   function renderClaimDone() {
     return (
       <div style={{ textAlign: 'center', padding: '12px 0' }}>
-        <StepDots current={2} />
+        <StepDots current={3} />
         <div style={{
           width:          72,
           height:         72,
@@ -535,9 +812,11 @@ export function Navbar() {
         @keyframes spin { to { transform: rotate(360deg); } }
         .goa-input:focus { border-color: #ffd700 !important; }
         .goa-btn-secondary:hover { background: #181818 !important; }
+        option { background: #111 !important; }
+        select { color-scheme: dark; }
       `}</style>
 
-      {/* ── Navbar — original bg/shadow restored ── */}
+      {/* ── Navbar ── */}
       <header style={{
         maxWidth:             1060,
         width:                '100%',
@@ -571,7 +850,7 @@ export function Navbar() {
           </div>
         </Link>
 
-        {/* Nav buttons — collapse to icon-only on small screens */}
+        {/* Nav buttons */}
         <div style={{ display: 'flex', alignItems: 'center', gap: 8 }}>
           {isLoggedIn ? (
             <>
@@ -687,10 +966,10 @@ export function Navbar() {
             background:   T.card,
             border:       `1px solid rgba(255,215,0,0.15)`,
             borderRadius: 24,
-            padding:      36,
+            padding:      step === 'claim-details' ? '32px 28px' : 36,
             width:        '100%',
-            maxWidth:     step === 'claim-pick' ? 480 : 440,
-            maxHeight:    '90vh',
+            maxWidth:     step === 'claim-pick' ? 480 : step === 'claim-details' ? 520 : 440,
+            maxHeight:    '92vh',
             overflowY:    'auto',
             position:     'relative',
             transition:   'max-width 0.3s',
@@ -719,7 +998,7 @@ export function Navbar() {
             </button>
 
             {/* Logo (non-claim steps) */}
-            {step !== 'claim-pick' && step !== 'claim-verify' && step !== 'claim-done' && (
+            {step !== 'claim-pick' && step !== 'claim-details' && step !== 'claim-verify' && step !== 'claim-done' && (
               <div style={{ display: 'flex', justifyContent: 'center', marginBottom: 24 }}>
                 <div style={{ width: 44, height: 44, borderRadius: '50%', overflow: 'hidden', border: `1px solid rgba(255,215,0,0.2)`, position: 'relative' }}>
                   <Image src={bewave} alt="Goaradio" fill style={{ objectFit: 'cover' }} />
@@ -756,9 +1035,10 @@ export function Navbar() {
               </>
             )}
 
-            {step === 'claim-pick'   && renderClaimPick()}
-            {step === 'claim-verify' && renderClaimVerify()}
-            {step === 'claim-done'   && renderClaimDone()}
+            {step === 'claim-pick'    && renderClaimPick()}
+            {step === 'claim-details' && renderClaimDetails()}
+            {step === 'claim-verify'  && renderClaimVerify()}
+            {step === 'claim-done'    && renderClaimDone()}
 
             {/* ── SIGNUP ── */}
             {step === 'signup' && (
@@ -771,7 +1051,18 @@ export function Navbar() {
                 </p>
                 <form onSubmit={handleSignup} style={{ display: 'flex', flexDirection: 'column', gap: 14 }}>
                   <input className="goa-input" style={inputStyle} type="email" placeholder="Email address" value={email} onChange={(e) => setEmail(e.target.value)} required />
-                  <input className="goa-input" style={inputStyle} type="password" placeholder="Create a password (min 6 chars)" value={password} onChange={(e) => setPassword(e.target.value)} required minLength={6} />
+                  <div style={{ position: 'relative' }}>
+                    <input className="goa-input" style={{ ...inputStyle, paddingRight: 42 }} type={showPass ? 'text' : 'password'} placeholder="Create a password (min 6 chars)" value={password} onChange={(e) => setPassword(e.target.value)} required minLength={6} />
+                    <button type="button" onClick={() => setShowPass(p => !p)} style={{ position: 'absolute', right: 12, top: '50%', transform: 'translateY(-50%)', background: 'none', border: 'none', color: T.muted, cursor: 'pointer', display: 'flex' }}>
+                      {showPass ? <EyeOff size={14} /> : <Eye size={14} />}
+                    </button>
+                  </div>
+                  <div style={{ position: 'relative' }}>
+                    <input className="goa-input" style={{ ...inputStyle, paddingRight: 42, borderColor: confirmPassword && confirmPassword !== password ? '#ef4444' : undefined }} type={showConfirm ? 'text' : 'password'} placeholder="Confirm password" value={confirmPassword} onChange={(e) => setConfirmPassword(e.target.value)} required />
+                    <button type="button" onClick={() => setShowConfirm(p => !p)} style={{ position: 'absolute', right: 12, top: '50%', transform: 'translateY(-50%)', background: 'none', border: 'none', color: T.muted, cursor: 'pointer', display: 'flex' }}>
+                      {showConfirm ? <EyeOff size={14} /> : <Eye size={14} />}
+                    </button>
+                  </div>
                   {error && <p style={{ color: '#ff6b6b', fontSize: 13, margin: 0 }}>{error}</p>}
                   <button type="submit" style={btnPrimary} disabled={loading}>
                     <UserPlus size={15} />
@@ -809,7 +1100,12 @@ export function Navbar() {
                 </p>
                 <form onSubmit={handleLogin} style={{ display: 'flex', flexDirection: 'column', gap: 14 }}>
                   <input className="goa-input" style={inputStyle} type="email" placeholder="Email address" value={email} onChange={(e) => setEmail(e.target.value)} required />
-                  <input className="goa-input" style={inputStyle} type="password" placeholder="Password" value={password} onChange={(e) => setPassword(e.target.value)} required />
+                  <div style={{ position: 'relative' }}>
+                    <input className="goa-input" style={{ ...inputStyle, paddingRight: 42 }} type={showPass ? 'text' : 'password'} placeholder="Password" value={password} onChange={(e) => setPassword(e.target.value)} required />
+                    <button type="button" onClick={() => setShowPass(p => !p)} style={{ position: 'absolute', right: 12, top: '50%', transform: 'translateY(-50%)', background: 'none', border: 'none', color: T.muted, cursor: 'pointer', display: 'flex' }}>
+                      {showPass ? <EyeOff size={14} /> : <Eye size={14} />}
+                    </button>
+                  </div>
                   {error && <p style={{ color: '#ff6b6b', fontSize: 13, margin: 0 }}>{error}</p>}
                   <button type="submit" style={btnPrimary} disabled={loading}>
                     <LogIn size={15} />
