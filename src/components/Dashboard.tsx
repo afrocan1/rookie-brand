@@ -1001,9 +1001,7 @@ export default function Dashboard() {
             <div style={{ marginTop: 14, padding: '10px 14px', background: 'rgba(255,215,0,0.05)', border: `1px solid rgba(255,215,0,0.15)`, borderRadius: 8, fontSize: 12, color: T.muted, display: 'flex', gap: 8, alignItems: 'flex-start' }}>
               <AlertCircle size={14} color={T.accent} style={{ flexShrink: 0, marginTop: 1 }} />
               <span>
-                No daily breakdown found — showing all-time totals as today. For per-day charts, write to{' '}
-                <code style={{ color: T.accent, background: T.bg3, padding: '1px 5px', borderRadius: 4 }}>streams/&lt;trackTitle&gt;/days/YYYY-MM-DD</code> and{' '}
-                <code style={{ color: T.accent, background: T.bg3, padding: '1px 5px', borderRadius: 4 }}>replays/&lt;trackTitle&gt;/days/YYYY-MM-DD</code> in Firestore.
+                No daily breakdown found — showing all-time totals as today.
               </span>
             </div>
           )}
