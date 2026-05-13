@@ -89,6 +89,7 @@ interface Track {
 
 interface ProfileData {
   artistName?: string
+  fullName?: string
   bio?: string
   genre?: string
   instagram?: string
@@ -100,6 +101,8 @@ interface ProfileData {
   verified?: boolean
   airtableId?: string
   email?: string
+  phone?: string
+  country?: string
 }
 
 type Page = 'overview' | 'analytics' | 'earnings' | 'tracks' | 'upload' | 'profile'
@@ -170,56 +173,33 @@ export default function Dashboard() {
 
   // ── Auth guard ───────────────────────────────────────────────────────────
   useEffect(() => {
-    // Firebase always fires onAuthStateChanged once with `null` while it
-    // restores the persisted session from IndexedDB. We must not redirect on
-    // that first null — only after we know the session restore is done.
-    // `sessionSettled` flips to true the moment we get any non-null user OR
-    // after a 3-second safety timeout (in case Firebase never resolves).
     let sessionSettled = false
 
-    // Safety timeout: if Firebase hasn't given us a user after 3s, it's
-    // genuinely logged out and we redirect.
     const timeout = setTimeout(() => {
       if (!sessionSettled) {
-        console.log('[Dashboard] auth timeout — no session after 3s, redirecting home')
         sessionSettled = true
         router.replace('/')
       }
     }, 3000)
 
     const unsub = onAuthStateChanged(auth, async (user) => {
-      console.log('[Dashboard] auth state:', user ? `uid=${user.uid}` : 'null')
-
       if (!user) {
-        if (!sessionSettled) {
-          // This is the initial null while Firebase restores from storage — ignore it
-          console.log('[Dashboard] initial null fire, waiting for session restore...')
-          return
-        }
-        // sessionSettled=true means a user was previously confirmed then signed out
-        console.log('[Dashboard] user signed out → redirecting home')
+        if (!sessionSettled) return
         router.replace('/')
         return
       }
 
-      // We have a real user — cancel the timeout and mark session as settled
       clearTimeout(timeout)
       sessionSettled = true
 
-      // Retry up to 3 times with delay — handles race condition where navbar
-      // hasn't finished writing the Firestore doc yet when dashboard mounts
       let data: ProfileData = {}
       let attempts = 0
       while (attempts < 3) {
         try {
-          console.log(`[Dashboard] fetching Firestore doc, attempt ${attempts + 1}`)
           const snap = await getDoc(doc(db, 'artists', user.uid))
           if (snap.exists()) {
             data = snap.data() as ProfileData
-            console.log('[Dashboard] Firestore doc found:', data)
             break
-          } else {
-            console.log('[Dashboard] doc does not exist yet, waiting...')
           }
         } catch (err) {
           console.error('[Dashboard] Firestore error:', err)
@@ -228,10 +208,7 @@ export default function Dashboard() {
         if (attempts < 3) await new Promise(r => setTimeout(r, 800))
       }
 
-      // Even if Firestore doc is missing or has no artistName, let the user in
-      // using their Firebase Auth display name as a fallback
       const resolvedName = data.artistName || user.displayName || user.email?.split('@')[0] || 'Artist'
-      console.log('[Dashboard] resolved artist name:', resolvedName)
 
       setProfileData(data)
       setArtistName(resolvedName)
@@ -253,7 +230,6 @@ export default function Dashboard() {
     }
   }, [router])
 
-  // ── Load tracks once we have artist name ────────────────────────────────
   useEffect(() => {
     if (!artistName) return
     loadTracks(artistName)
@@ -284,7 +260,6 @@ export default function Dashboard() {
     setTracksLoading(false)
   }
 
-  // ── Stats ────────────────────────────────────────────────────────────────
   const totalStreams   = tracks.reduce((s, t) => s + t.streams, 0)
   const totalGoa       = Math.floor(totalStreams / 10)
   const monthlyGoA     = Math.floor(totalGoa * 0.3)
@@ -292,7 +267,6 @@ export default function Dashboard() {
   const listeners      = Math.floor(totalStreams * 0.6)
   const verified       = profileData.verified || false
 
-  // ── Upload ───────────────────────────────────────────────────────────────
   async function handleUpload() {
     if (!uploadTitle.trim() || !uploadAudio.trim()) {
       showToast('Title and Audio URL are required.', 'error')
@@ -333,7 +307,6 @@ export default function Dashboard() {
     setTimeout(() => setUploadProgress(0), 1000)
   }
 
-  // ── Delete ───────────────────────────────────────────────────────────────
   async function confirmDelete() {
     if (!deleteTarget) return
     setDeleteLoading(true)
@@ -348,7 +321,6 @@ export default function Dashboard() {
     setDeleteLoading(false)
   }
 
-  // ── Save Profile ─────────────────────────────────────────────────────────
   async function saveProfile() {
     setSavingProfile(true)
     const user = auth.currentUser
@@ -389,15 +361,12 @@ export default function Dashboard() {
     router.replace('/')
   }
 
-  // ── Chart data ───────────────────────────────────────────────────────────
   const days      = ['Mon', 'Tue', 'Wed', 'Thu', 'Fri', 'Sat', 'Sun']
   const maxStream = Math.max(totalStreams * 0.25, 10)
   const chartVals = days.map((_, i) =>
     Math.floor(Math.random() * maxStream * (i >= 5 ? 1.4 : 1))
   )
-  const chartPeak = Math.max(...chartVals, 1)
 
-  // ── Greeting ─────────────────────────────────────────────────────────────
   const hour   = new Date().getHours()
   const greet  = hour < 12 ? 'Good morning' : hour < 18 ? 'Good afternoon' : 'Good evening'
 
@@ -419,9 +388,6 @@ export default function Dashboard() {
     )
   }
 
-  // ─────────────────────────────────────────────────────────────────────────
-  // SHARED STYLES
-  // ─────────────────────────────────────────────────────────────────────────
   const card: React.CSSProperties = {
     background: T.card,
     border: `1px solid ${T.border}`,
@@ -476,7 +442,6 @@ export default function Dashboard() {
     transition: 'background 0.2s',
   }
 
-  // ─── NAV ITEMS ────────────────────────────────────────────────────────────
   const navItems: { id: Page; label: string; icon: React.ReactNode; section?: string }[] = [
     { id: 'overview',  label: 'Dashboard',  icon: <LayoutDashboard size={16} />, section: 'OVERVIEW' },
     { id: 'analytics', label: 'Analytics',  icon: <BarChart3 size={16} /> },
@@ -540,11 +505,9 @@ export default function Dashboard() {
   const picSrc    = profileData.profilePic || `https://ui-avatars.com/api/?name=${encodeURIComponent(artistName)}&background=1a1800&color=ffd700&size=200`
   const coverSrc  = profileData.coverArt || ''
 
-  // ─── SIDEBAR CONTENT ─────────────────────────────────────────────────────
   function SidebarContent() {
     return (
       <div style={{ display: 'flex', flexDirection: 'column', height: '100%' }}>
-        {/* Logo */}
         <div style={{ display: 'flex', alignItems: 'center', gap: 10, padding: '0 4px', marginBottom: 28 }}>
           <div style={{
             width: 34, height: 34, borderRadius: 9,
@@ -559,7 +522,6 @@ export default function Dashboard() {
           </div>
         </div>
 
-        {/* Nav */}
         <div style={{ display: 'flex', flexDirection: 'column', gap: 2, flex: 1 }}>
           {navItems.map(item => (
             <div key={item.id}>
@@ -586,7 +548,6 @@ export default function Dashboard() {
           </button>
         </div>
 
-        {/* Artist card at bottom */}
         <div style={{
           marginTop: 'auto',
           padding: '12px',
@@ -618,7 +579,6 @@ export default function Dashboard() {
     )
   }
 
-  // ─── STAT CARD ───────────────────────────────────────────────────────────
   function StatCard({ label, value, sub, icon, accent }: {
     label: string; value: string | number; sub: string; icon: React.ReactNode; accent: string
   }) {
@@ -642,7 +602,6 @@ export default function Dashboard() {
     )
   }
 
-  // ─── TRACK ROW ────────────────────────────────────────────────────────────
   function TrackRow({ track, index, showActions = true }: { track: Track; index: number; showActions?: boolean }) {
     const fallback = `https://ui-avatars.com/api/?name=${encodeURIComponent(track.title)}&background=1a1800&color=ffd700&size=100`
     return (
@@ -709,9 +668,6 @@ export default function Dashboard() {
     )
   }
 
-  // ─────────────────────────────────────────────────────────────────────────
-  // PAGE: OVERVIEW
-  // ─────────────────────────────────────────────────────────────────────────
   function PageOverview() {
     return (
       <div>
@@ -737,7 +693,6 @@ export default function Dashboard() {
           </div>
         </div>
 
-        {/* Stats */}
         <div style={{ display: 'grid', gridTemplateColumns: 'repeat(auto-fit, minmax(180px, 1fr))', gap: 14, marginBottom: 24 }}>
           <StatCard label="Total Streams" value={totalStreams.toLocaleString()} sub="all time" icon={<TrendingUp size={16} />} accent={`linear-gradient(90deg, ${T.accent}, ${T.accent2})`} />
           <StatCard label="Tracks" value={tracks.length} sub="on Goaradio" icon={<Music2 size={16} />} accent="linear-gradient(90deg, #a855f7, #7c3aed)" />
@@ -745,7 +700,6 @@ export default function Dashboard() {
           <StatCard label="Monthly Listeners" value={listeners.toLocaleString()} sub="unique users" icon={<Users size={16} />} accent="linear-gradient(90deg, #22c55e, #16a34a)" />
         </div>
 
-        {/* Top tracks */}
         <div style={{ ...card, marginBottom: 20 }}>
           <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between', marginBottom: 18 }}>
             <h2 style={{ fontFamily: "'Syne', sans-serif", fontSize: 16, fontWeight: 700, color: T.text, margin: 0 }}>Top Tracks</h2>
@@ -767,16 +721,12 @@ export default function Dashboard() {
             tracks.slice(0, 5).map((t, i) => <TrackRow key={t.id} track={t} index={i} showActions={false} />)
           )}
           {tracks.length > 0 && (
-            <button
-              onClick={() => setCurrentPage('tracks')}
-              style={{ ...btnGhost, marginTop: 14, fontSize: 13 }}
-            >
+            <button onClick={() => setCurrentPage('tracks')} style={{ ...btnGhost, marginTop: 14, fontSize: 13 }}>
               View all tracks <ChevronRight size={13} />
             </button>
           )}
         </div>
 
-        {/* Quick actions */}
         <div style={card}>
           <h2 style={{ fontFamily: "'Syne', sans-serif", fontSize: 16, fontWeight: 700, color: T.text, margin: '0 0 16px' }}>Quick Actions</h2>
           <div style={{ display: 'grid', gridTemplateColumns: 'repeat(auto-fit, minmax(160px, 1fr))', gap: 12 }}>
@@ -788,15 +738,7 @@ export default function Dashboard() {
               <button
                 key={item.title}
                 onClick={() => setCurrentPage(item.page)}
-                style={{
-                  ...btnGhost,
-                  flexDirection: 'column',
-                  alignItems: 'flex-start',
-                  gap: 8,
-                  padding: '14px 16px',
-                  height: 'auto',
-                  textAlign: 'left',
-                }}
+                style={{ ...btnGhost, flexDirection: 'column', alignItems: 'flex-start', gap: 8, padding: '14px 16px', height: 'auto', textAlign: 'left' }}
               >
                 {item.icon}
                 <div>
@@ -811,9 +753,6 @@ export default function Dashboard() {
     )
   }
 
-  // ─────────────────────────────────────────────────────────────────────────
-  // PAGE: ANALYTICS
-  // ─────────────────────────────────────────────────────────────────────────
   function PageAnalytics() {
     const maxBar = Math.max(...chartVals, 1)
     return (
@@ -832,11 +771,8 @@ export default function Dashboard() {
                   width: '100%', borderRadius: '5px 5px 0 0',
                   height: `${Math.max((v / maxBar) * 100, 4)}%`,
                   background: `linear-gradient(180deg, ${T.accent}, rgba(255,215,0,0.2))`,
-                  transition: 'opacity 0.2s',
                   cursor: 'default',
-                }}
-                  title={`${v} streams`}
-                />
+                }} title={`${v} streams`} />
                 <span style={{ fontSize: 11, color: T.muted2 }}>{days[i]}</span>
               </div>
             ))}
@@ -888,9 +824,6 @@ export default function Dashboard() {
     )
   }
 
-  // ─────────────────────────────────────────────────────────────────────────
-  // PAGE: EARNINGS
-  // ─────────────────────────────────────────────────────────────────────────
   function PageEarnings() {
     return (
       <div>
@@ -905,7 +838,6 @@ export default function Dashboard() {
             <div style={{ fontFamily: "'Syne', sans-serif", fontSize: 'clamp(42px, 10vw, 60px)', fontWeight: 800, lineHeight: 1, color: T.text }}>{totalGoa.toLocaleString()}</div>
             <div style={{ fontSize: 16, color: T.accent, fontWeight: 700, marginTop: 6 }}>$GOA</div>
           </div>
-
           <div style={{ display: 'grid', gridTemplateColumns: 'repeat(auto-fit, minmax(140px, 1fr))', gap: 12 }}>
             {[
               { label: 'This Month', value: monthlyGoA, token: '$GOA' },
@@ -951,9 +883,6 @@ export default function Dashboard() {
     )
   }
 
-  // ─────────────────────────────────────────────────────────────────────────
-  // PAGE: TRACKS
-  // ─────────────────────────────────────────────────────────────────────────
   function PageTracks() {
     return (
       <div>
@@ -966,7 +895,6 @@ export default function Dashboard() {
             <Plus size={14} /> Upload Track
           </button>
         </div>
-
         <div style={card}>
           {tracksLoading ? (
             <div style={{ display: 'flex', alignItems: 'center', gap: 8, color: T.muted, padding: '32px 0', fontSize: 14 }}>
@@ -989,9 +917,6 @@ export default function Dashboard() {
     )
   }
 
-  // ─────────────────────────────────────────────────────────────────────────
-  // PAGE: UPLOAD
-  // ─────────────────────────────────────────────────────────────────────────
   function PageUpload() {
     return (
       <div>
@@ -1001,7 +926,6 @@ export default function Dashboard() {
         </div>
 
         <div style={{ display: 'grid', gridTemplateColumns: 'repeat(auto-fit, minmax(280px, 1fr))', gap: 16, marginBottom: 16 }}>
-          {/* Track details */}
           <div style={card}>
             <h2 style={{ fontFamily: "'Syne', sans-serif", fontSize: 15, fontWeight: 700, color: T.text, margin: '0 0 18px' }}>Track Details</h2>
             <div style={{ display: 'flex', flexDirection: 'column', gap: 14 }}>
@@ -1011,11 +935,7 @@ export default function Dashboard() {
               </div>
               <div>
                 <label style={{ fontSize: 12, color: T.muted, display: 'block', marginBottom: 6, fontWeight: 500 }}>Genre</label>
-                <select
-                  style={{ ...inputStyle, appearance: 'none' }}
-                  value={uploadGenre}
-                  onChange={e => setUploadGenre(e.target.value)}
-                >
+                <select style={{ ...inputStyle, appearance: 'none' }} value={uploadGenre} onChange={e => setUploadGenre(e.target.value)}>
                   <option value="">Select genre</option>
                   {['Afrobeats','Afropop','Highlife','Dancehall','Hip Hop','Amapiano','Gospel','R&B','Reggae','Other'].map(g => (
                     <option key={g} value={g}>{g}</option>
@@ -1029,11 +949,8 @@ export default function Dashboard() {
               <div>
                 <label style={{ fontSize: 12, color: T.muted, display: 'block', marginBottom: 6, fontWeight: 500 }}>Audio URL *</label>
                 <div style={{ display: 'flex', gap: 8 }}>
-                  <input style={{ ...inputStyle }} value={uploadAudio} onChange={e => setUploadAudio(e.target.value)} placeholder="https://... (MP3 link)" />
-                  <button
-                    onClick={() => { if (uploadAudio) setAudioPreviewUrl(uploadAudio) }}
-                    style={{ ...btnGhost, flexShrink: 0, padding: '10px 12px' }}
-                  >
+                  <input style={inputStyle} value={uploadAudio} onChange={e => setUploadAudio(e.target.value)} placeholder="https://... (MP3 link)" />
+                  <button onClick={() => { if (uploadAudio) setAudioPreviewUrl(uploadAudio) }} style={{ ...btnGhost, flexShrink: 0, padding: '10px 12px' }}>
                     <Play size={13} />
                   </button>
                 </div>
@@ -1044,7 +961,6 @@ export default function Dashboard() {
             </div>
           </div>
 
-          {/* Cover art */}
           <div style={card}>
             <h2 style={{ fontFamily: "'Syne', sans-serif", fontSize: 15, fontWeight: 700, color: T.text, margin: '0 0 18px' }}>Cover Art</h2>
             <div style={{ display: 'flex', flexDirection: 'column', gap: 14 }}>
@@ -1052,28 +968,20 @@ export default function Dashboard() {
                 <label style={{ fontSize: 12, color: T.muted, display: 'block', marginBottom: 6, fontWeight: 500 }}>Cover Image URL</label>
                 <div style={{ display: 'flex', gap: 8 }}>
                   <input style={inputStyle} value={uploadCover} onChange={e => setUploadCover(e.target.value)} placeholder="https://... (image link)" />
-                  <button
-                    onClick={() => { if (uploadCover) setCoverPreviewUrl(uploadCover) }}
-                    style={{ ...btnGhost, flexShrink: 0, padding: '10px 12px' }}
-                  >
+                  <button onClick={() => { if (uploadCover) setCoverPreviewUrl(uploadCover) }} style={{ ...btnGhost, flexShrink: 0, padding: '10px 12px' }}>
                     <Check size={13} />
                   </button>
                 </div>
               </div>
-
               {coverPreviewUrl ? (
                 <img src={coverPreviewUrl} alt="Cover preview" style={{ width: 130, height: 130, borderRadius: 12, objectFit: 'cover', border: `1px solid ${T.border2}` }} />
               ) : (
-                <div style={{
-                  border: `2px dashed ${T.border2}`, borderRadius: 12,
-                  padding: '32px 24px', textAlign: 'center', color: T.muted,
-                }}>
+                <div style={{ border: `2px dashed ${T.border2}`, borderRadius: 12, padding: '32px 24px', textAlign: 'center', color: T.muted }}>
                   <Upload size={28} style={{ opacity: 0.4, marginBottom: 8 }} />
                   <p style={{ fontSize: 13, margin: '0 0 4px' }}>Paste a URL above to preview</p>
                   <p style={{ fontSize: 12, color: T.muted2 }}>JPG, PNG, WEBP recommended</p>
                 </div>
               )}
-
               <p style={{ fontSize: 12, color: T.muted2 }}>
                 Host images on <a href="https://imgur.com" target="_blank" rel="noreferrer" style={{ color: T.accent, textDecoration: 'none' }}>Imgur</a> or <a href="https://cloudinary.com" target="_blank" rel="noreferrer" style={{ color: T.accent, textDecoration: 'none' }}>Cloudinary</a>.
               </p>
@@ -1081,17 +989,12 @@ export default function Dashboard() {
           </div>
         </div>
 
-        {/* Publish */}
         <div style={{ ...card, display: 'flex', alignItems: 'center', justifyContent: 'space-between', flexWrap: 'wrap', gap: 16 }}>
           <div>
             <div style={{ fontSize: 15, fontWeight: 600, color: T.text, marginBottom: 4 }}>Ready to publish?</div>
             <div style={{ fontSize: 13, color: T.muted }}>This will add the track to your Airtable record and make it visible on Goaradio.</div>
           </div>
-          <button
-            onClick={handleUpload}
-            disabled={uploading}
-            style={{ ...btnGold, padding: '12px 24px', fontSize: 14, opacity: uploading ? 0.7 : 1 }}
-          >
+          <button onClick={handleUpload} disabled={uploading} style={{ ...btnGold, padding: '12px 24px', fontSize: 14, opacity: uploading ? 0.7 : 1 }}>
             {uploading ? <Loader2 size={15} style={{ animation: 'spin 0.8s linear infinite' }} /> : <Send size={15} />}
             {uploading ? 'Publishing...' : 'Publish Track'}
           </button>
@@ -1105,9 +1008,6 @@ export default function Dashboard() {
     )
   }
 
-  // ─────────────────────────────────────────────────────────────────────────
-  // PAGE: PROFILE
-  // ─────────────────────────────────────────────────────────────────────────
   function PageProfile() {
     const displayPic   = profPicUrl || picSrc
     const displayCover = profCoverUrl || coverSrc
@@ -1126,7 +1026,6 @@ export default function Dashboard() {
         </div>
 
         <div style={card}>
-          {/* Cover */}
           <div style={{
             position: 'relative', height: 180, borderRadius: 12, overflow: 'hidden',
             marginBottom: 20, background: T.bg3,
@@ -1142,7 +1041,6 @@ export default function Dashboard() {
             )}
           </div>
 
-          {/* Pic + name */}
           <div style={{ display: 'flex', alignItems: 'flex-end', gap: 18, marginBottom: 22 }}>
             <div style={{ position: 'relative', flexShrink: 0 }}>
               <img
@@ -1167,23 +1065,17 @@ export default function Dashboard() {
             </div>
           </div>
 
-          {/* URL fields */}
           <div style={{ display: 'grid', gridTemplateColumns: 'repeat(auto-fit, minmax(240px, 1fr))', gap: 14, padding: '16px', background: T.bg2, borderRadius: 12, border: `1px solid ${T.border}`, marginBottom: 22 }}>
             <div>
               <label style={{ fontSize: 12, color: T.muted, display: 'block', marginBottom: 6, fontWeight: 500 }}>Profile Pic URL</label>
-              <div style={{ display: 'flex', gap: 8 }}>
-                <input style={inputStyle} value={profPicUrl} onChange={e => setProfPicUrl(e.target.value)} placeholder="https://..." />
-              </div>
+              <input style={inputStyle} value={profPicUrl} onChange={e => setProfPicUrl(e.target.value)} placeholder="https://..." />
             </div>
             <div>
               <label style={{ fontSize: 12, color: T.muted, display: 'block', marginBottom: 6, fontWeight: 500 }}>Cover Art URL</label>
-              <div style={{ display: 'flex', gap: 8 }}>
-                <input style={inputStyle} value={profCoverUrl} onChange={e => setProfCoverUrl(e.target.value)} placeholder="https://..." />
-              </div>
+              <input style={inputStyle} value={profCoverUrl} onChange={e => setProfCoverUrl(e.target.value)} placeholder="https://..." />
             </div>
           </div>
 
-          {/* Bio + socials */}
           <div style={{ display: 'grid', gridTemplateColumns: 'repeat(auto-fit, minmax(240px, 1fr))', gap: 16 }}>
             <div>
               <label style={{ fontSize: 12, color: T.muted, display: 'block', marginBottom: 6, fontWeight: 500 }}>Artist / Stage Name</label>
@@ -1225,9 +1117,6 @@ export default function Dashboard() {
     )
   }
 
-  // ─────────────────────────────────────────────────────────────────────────
-  // RENDER
-  // ─────────────────────────────────────────────────────────────────────────
   return (
     <>
       <style>{`
@@ -1246,26 +1135,18 @@ export default function Dashboard() {
       `}</style>
 
       <div style={{ display: 'flex', minHeight: '100vh', background: T.bg, fontFamily: "'DM Sans', sans-serif" }}>
-
-        {/* ── DESKTOP SIDEBAR ── */}
         <aside style={{
           position: 'fixed', left: 0, top: 0, bottom: 0,
           width: 224, background: T.bg2, borderRight: `1px solid ${T.border}`,
           padding: '24px 16px', zIndex: 50, overflowY: 'auto',
           display: 'flex', flexDirection: 'column',
-        }}
-          className="goa-sidebar"
-        >
+        }} className="goa-sidebar">
           <SidebarContent />
         </aside>
 
-        {/* ── MOBILE SIDEBAR OVERLAY ── */}
         {sidebarOpen && (
           <>
-            <div
-              onClick={() => setSidebarOpen(false)}
-              style={{ position: 'fixed', inset: 0, background: 'rgba(0,0,0,0.7)', backdropFilter: 'blur(4px)', zIndex: 98 }}
-            />
+            <div onClick={() => setSidebarOpen(false)} style={{ position: 'fixed', inset: 0, background: 'rgba(0,0,0,0.7)', backdropFilter: 'blur(4px)', zIndex: 98 }} />
             <aside style={{
               position: 'fixed', left: 0, top: 0, bottom: 0,
               width: 224, background: T.bg2, borderRight: `1px solid ${T.border}`,
@@ -1273,10 +1154,7 @@ export default function Dashboard() {
               display: 'flex', flexDirection: 'column',
               animation: 'slideIn 0.2s ease',
             }}>
-              <button
-                onClick={() => setSidebarOpen(false)}
-                style={{ position: 'absolute', top: 16, right: 14, background: 'none', border: 'none', color: T.muted, cursor: 'pointer' }}
-              >
+              <button onClick={() => setSidebarOpen(false)} style={{ position: 'absolute', top: 16, right: 14, background: 'none', border: 'none', color: T.muted, cursor: 'pointer' }}>
                 <X size={18} />
               </button>
               <SidebarContent />
@@ -1284,17 +1162,9 @@ export default function Dashboard() {
           </>
         )}
 
-        {/* ── MAIN ── */}
         <main style={{ flex: 1, marginLeft: 224, minHeight: '100vh', padding: '32px 32px', maxWidth: '100%' }} className="goa-main">
-
-          {/* Mobile top bar */}
-          <div style={{ display: 'none', alignItems: 'center', gap: 12, marginBottom: 20, paddingBottom: 16, borderBottom: `1px solid ${T.border}` }}
-            className="goa-mobile-bar"
-          >
-            <button
-              onClick={() => setSidebarOpen(true)}
-              style={{ background: 'none', border: `1px solid ${T.border}`, borderRadius: 8, padding: '7px 9px', color: T.text, cursor: 'pointer', display: 'flex' }}
-            >
+          <div style={{ display: 'none', alignItems: 'center', gap: 12, marginBottom: 20, paddingBottom: 16, borderBottom: `1px solid ${T.border}` }} className="goa-mobile-bar">
+            <button onClick={() => setSidebarOpen(true)} style={{ background: 'none', border: `1px solid ${T.border}`, borderRadius: 8, padding: '7px 9px', color: T.text, cursor: 'pointer', display: 'flex' }}>
               <Menu size={18} />
             </button>
             <div style={{ display: 'flex', alignItems: 'center', gap: 8 }}>
@@ -1305,7 +1175,6 @@ export default function Dashboard() {
             </div>
           </div>
 
-          {/* Pages */}
           {currentPage === 'overview'  && <PageOverview />}
           {currentPage === 'analytics' && <PageAnalytics />}
           {currentPage === 'earnings'  && <PageEarnings />}
@@ -1315,21 +1184,12 @@ export default function Dashboard() {
         </main>
       </div>
 
-      {/* ── DELETE CONFIRM ── */}
       {deleteTarget && (
         <div
           onClick={e => { if (e.target === e.currentTarget) setDeleteTarget(null) }}
-          style={{
-            position: 'fixed', inset: 0, background: 'rgba(0,0,0,0.8)',
-            backdropFilter: 'blur(6px)', zIndex: 200,
-            display: 'flex', alignItems: 'center', justifyContent: 'center', padding: 20,
-          }}
+          style={{ position: 'fixed', inset: 0, background: 'rgba(0,0,0,0.8)', backdropFilter: 'blur(6px)', zIndex: 200, display: 'flex', alignItems: 'center', justifyContent: 'center', padding: 20 }}
         >
-          <div style={{
-            background: T.card, border: `1px solid ${T.border2}`,
-            borderRadius: 20, padding: 32, width: '100%', maxWidth: 360,
-            textAlign: 'center', animation: 'slideIn 0.2s ease',
-          }}>
+          <div style={{ background: T.card, border: `1px solid ${T.border2}`, borderRadius: 20, padding: 32, width: '100%', maxWidth: 360, textAlign: 'center', animation: 'slideIn 0.2s ease' }}>
             <div style={{ width: 56, height: 56, borderRadius: '50%', background: 'rgba(239,68,68,0.08)', border: '1px solid rgba(239,68,68,0.2)', display: 'flex', alignItems: 'center', justifyContent: 'center', margin: '0 auto 16px' }}>
               <Trash2 size={22} color={T.danger} />
             </div>
@@ -1337,11 +1197,7 @@ export default function Dashboard() {
             <p style={{ fontSize: 13, color: T.muted, lineHeight: 1.6, marginBottom: 24 }}>This will delete the track from Airtable and remove it from Goaradio immediately.</p>
             <div style={{ display: 'flex', gap: 10 }}>
               <button onClick={() => setDeleteTarget(null)} style={{ ...btnGhost, flex: 1, justifyContent: 'center' }}>Cancel</button>
-              <button
-                onClick={confirmDelete}
-                disabled={deleteLoading}
-                style={{ ...btnGold, flex: 1, justifyContent: 'center', background: T.danger, color: '#fff' }}
-              >
+              <button onClick={confirmDelete} disabled={deleteLoading} style={{ ...btnGold, flex: 1, justifyContent: 'center', background: T.danger, color: '#fff' }}>
                 {deleteLoading ? <Loader2 size={14} style={{ animation: 'spin 0.8s linear infinite' }} /> : <Trash2 size={14} />}
                 Delete
               </button>
@@ -1350,7 +1206,6 @@ export default function Dashboard() {
         </div>
       )}
 
-      {/* ── TOAST ── */}
       <div style={{
         position: 'fixed', bottom: 24, right: 24, zIndex: 300,
         background: T.card2,
@@ -1364,14 +1219,10 @@ export default function Dashboard() {
         pointerEvents: 'none',
         maxWidth: 320,
       }}>
-        {toast.type === 'success'
-          ? <Check size={15} color={T.success} />
-          : <AlertCircle size={15} color={T.danger} />
-        }
+        {toast.type === 'success' ? <Check size={15} color={T.success} /> : <AlertCircle size={15} color={T.danger} />}
         {toast.msg}
       </div>
 
-      {/* ── RESPONSIVE STYLES ── */}
       <style>{`
         @media (max-width: 900px) {
           .goa-sidebar { width: 200px !important; }
