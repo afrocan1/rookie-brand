@@ -853,7 +853,7 @@ export default function Dashboard() {
         </div>
 
         {/* Stat strip */}
-        <div style={{ display: 'grid', gridTemplateColumns: 'repeat(auto-fit, minmax(150px, 1fr))', gap: 12, marginBottom: 20 }}>
+        <div className="goa-stat-grid" style={{ display: 'grid', gap: 12, marginBottom: 20 }}>
           {[
             {
               label: "Today's Streams",
