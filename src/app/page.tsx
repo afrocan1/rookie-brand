@@ -126,7 +126,7 @@ export default function Home() {
         <div className="image-wrapper">
           <div className="w-[calc(100%-2px)] h-[calc(100%-2px)] z-20 relative rounded-2xl overflow-hidden bg-[#111]">
             <Image
-              src="/images/dark-background.png"
+              src="/images/ChatGPT Image May 13, 2026, 03_49_37 PM.png"
               alt="Image with a black background and a metallic blue gradient"
               className="object-scale-down"
               objectFit="cover"
