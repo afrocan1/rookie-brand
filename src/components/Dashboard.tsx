@@ -1298,7 +1298,7 @@ export default function Dashboard() {
               </span>
             </div>
           </div>
-          <div style={{ display: 'grid', gridTemplateColumns: 'repeat(auto-fit, minmax(240px, 1fr))', gap: 14, padding: '16px', background: T.bg2, borderRadius: 12, border: `1px solid ${T.border}`, marginBottom: 22 }}>
+          <div style={{ display: 'grid', gridTemplateColumns: 'repeat(2, 1fr)', gap: 14, padding: '16px', background: T.bg2, borderRadius: 12, border: `1px solid ${T.border}`, marginBottom: 22 }}>
             <div>
               <label style={{ fontSize: 12, color: T.muted, display: 'block', marginBottom: 6, fontWeight: 500 }}>Profile Pic URL</label>
               <input style={inputStyle} value={profPicUrl} onChange={e => setProfPicUrl(e.target.value)} placeholder="https://..." />
@@ -1308,7 +1308,7 @@ export default function Dashboard() {
               <input style={inputStyle} value={profCoverUrl} onChange={e => setProfCoverUrl(e.target.value)} placeholder="https://..." />
             </div>
           </div>
-          <div style={{ display: 'grid', gridTemplateColumns: 'repeat(auto-fit, minmax(240px, 1fr))', gap: 16 }}>
+          <div style={{ display: 'grid', gridTemplateColumns: 'repeat(2, 1fr)', gap: 16 }}>
             <div>
               <label style={{ fontSize: 12, color: T.muted, display: 'block', marginBottom: 6, fontWeight: 500 }}>Artist / Stage Name</label>
               <input style={inputStyle} value={profArtistName} onChange={e => setProfArtistName(e.target.value)} placeholder="Your artist name" />
@@ -1368,6 +1368,9 @@ export default function Dashboard() {
           .goa-main        { margin-left: 0 !important; padding: 16px !important; }
           .goa-mobile-bar  { display: flex !important; }
         }
+        @media (max-width: 600px) {
+  .goa-profile-grid { grid-template-columns: 1fr !important; }
+}
       `}</style>
 
       <div style={{ display: 'flex', minHeight: '100vh', background: T.bg, fontFamily: "'DM Sans', sans-serif" }}>
