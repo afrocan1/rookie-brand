@@ -14,6 +14,9 @@ import {
   setDoc,
   collection,
   getDocs,
+  query,
+  orderBy,
+  limit,
 } from 'firebase/firestore'
 import { auth, db } from '@/lib/firebase'
 import {
@@ -44,6 +47,7 @@ import {
   Loader2,
   AlertCircle,
   RefreshCw,
+  Repeat2,
 } from 'lucide-react'
 
 // ─── Airtable ─────────────────────────────────────────────────────────────────
@@ -88,7 +92,8 @@ interface Track {
   audio: string
   duration: string
   genre: string
-  streams: number
+  streams: number   // unique listeners (from Firestore `streams` collection)
+  replays: number   // total plays    (from Firestore `replays` collection)
 }
 
 interface ProfileData {
@@ -109,8 +114,13 @@ interface ProfileData {
   country?: string
 }
 
-// Daily stream counts keyed by 'YYYY-MM-DD'
-type DailyStreamMap = Record<string, number>
+// Daily counts keyed by 'YYYY-MM-DD'
+type DailyMap = Record<string, number>
+
+interface DailyAnalytics {
+  streams: DailyMap   // unique listeners per day
+  replays: DailyMap   // total plays per day
+}
 
 type Page = 'overview' | 'analytics' | 'earnings' | 'tracks' | 'upload' | 'profile'
 
@@ -130,13 +140,13 @@ const T = {
   muted2:  '#333330',
   success: '#22c55e',
   danger:  '#ef4444',
+  info:    '#3b82f6',
 }
 
 interface ToastState { msg: string; type: 'success' | 'error'; visible: boolean }
 
 // ─── Helpers ──────────────────────────────────────────────────────────────────
 
-/** Returns last N days as 'YYYY-MM-DD' strings, oldest first */
 function lastNDays(n: number): string[] {
   const days: string[] = []
   for (let i = n - 1; i >= 0; i--) {
@@ -147,9 +157,28 @@ function lastNDays(n: number): string[] {
   return days
 }
 
-/** Short day label 'Mon', 'Tue', etc. from 'YYYY-MM-DD' */
 function dayLabel(dateStr: string): string {
   return new Date(dateStr + 'T12:00:00').toLocaleDateString('en-US', { weekday: 'short' })
+}
+
+// Safely read a Firestore doc count field
+async function safeGetCount(path: string[]): Promise<number> {
+  try {
+    const ref = doc(db, path[0], ...path.slice(1))
+    const snap = await getDoc(ref)
+    if (snap.exists()) {
+      const data = snap.data()
+      // Support various field names
+      return (
+        (data?.count as number) ||
+        (data?.total as number) ||
+        (data?.plays as number) ||
+        (data?.streams as number) ||
+        0
+      )
+    }
+  } catch { /* ignore */ }
+  return 0
 }
 
 // ─── Main Component ───────────────────────────────────────────────────────────
@@ -169,8 +198,13 @@ export default function Dashboard() {
 
   // ── Analytics state ──────────────────────────────────────────────────────
   const [analyticsLoading, setAnalyticsLoading] = useState(false)
-  const [dailyStreams, setDailyStreams] = useState<DailyStreamMap>({})
+  const [dailyAnalytics, setDailyAnalytics] = useState<DailyAnalytics>({
+    streams: {},
+    replays: {},
+  })
   const [analyticsdays] = useState<string[]>(lastNDays(7))
+  // active chart tab: 'streams' | 'replays' | 'both'
+  const [chartTab, setChartTab] = useState<'streams' | 'replays' | 'both'>('both')
 
   // Upload state
   const [uploadTitle, setUploadTitle]       = useState('')
@@ -203,21 +237,12 @@ export default function Dashboard() {
   // ── Auth guard ───────────────────────────────────────────────────────────
   useEffect(() => {
     let sessionSettled = false
-
     const timeout = setTimeout(() => {
-      if (!sessionSettled) {
-        sessionSettled = true
-        router.replace('/')
-      }
+      if (!sessionSettled) { sessionSettled = true; router.replace('/') }
     }, 3000)
 
     const unsub = onAuthStateChanged(auth, async (user) => {
-      if (!user) {
-        if (!sessionSettled) return
-        router.replace('/')
-        return
-      }
-
+      if (!user) { if (!sessionSettled) return; router.replace('/'); return }
       clearTimeout(timeout)
       sessionSettled = true
 
@@ -226,19 +251,13 @@ export default function Dashboard() {
       while (attempts < 3) {
         try {
           const snap = await getDoc(doc(db, 'artists', user.uid))
-          if (snap.exists()) {
-            data = snap.data() as ProfileData
-            break
-          }
-        } catch (err) {
-          console.error('[Dashboard] Firestore error:', err)
-        }
+          if (snap.exists()) { data = snap.data() as ProfileData; break }
+        } catch (err) { console.error('[Dashboard] Firestore error:', err) }
         attempts++
         if (attempts < 3) await new Promise(r => setTimeout(r, 800))
       }
 
       const resolvedName = data.artistName || user.displayName || user.email?.split('@')[0] || 'Artist'
-
       setProfileData(data)
       setArtistName(resolvedName)
       setProfArtistName(data.artistName || resolvedName)
@@ -253,10 +272,7 @@ export default function Dashboard() {
       setAuthLoading(false)
     })
 
-    return () => {
-      clearTimeout(timeout)
-      unsub()
-    }
+    return () => { clearTimeout(timeout); unsub() }
   }, [router])
 
   // ── Load tracks whenever artistName is resolved ──────────────────────────
@@ -271,24 +287,21 @@ export default function Dashboard() {
     try {
       const res  = await atFetch('Tracks', `Artist="${name}"`)
       const data = await res.json()
-
       // eslint-disable-next-line @typescript-eslint/no-explicit-any
       const rawRecords: any[] = data.records || []
 
       const list: Track[] = await Promise.all(
         rawRecords.map(async (r) => {
-          const f = r.fields
+          const f     = r.fields
           const title = f.Title || 'Untitled'
 
-          let streams = 0
-          try {
-            const streamDoc = await getDoc(doc(db, 'streams', title))
-            if (streamDoc.exists()) {
-              streams = (streamDoc.data().count as number) || 0
-            }
-          } catch {
-            streams = 0
-          }
+          // ── Read BOTH streams (unique) and replays (total plays) ──────────
+          // streams/{trackTitle} → unique listeners
+          // replays/{trackTitle} → total play count (includes repeat listens)
+          const [streams, replays] = await Promise.all([
+            safeGetCount(['streams', title]),
+            safeGetCount(['replays', title]),
+          ])
 
           return {
             id:       r.id,
@@ -299,11 +312,13 @@ export default function Dashboard() {
             duration: f.Duration  || '--:--',
             genre:    f.Genre     || '',
             streams,
+            replays,
           }
         })
       )
 
-      list.sort((a, b) => b.streams - a.streams)
+      // Sort by replays (total plays) descending
+      list.sort((a, b) => b.replays - a.replays)
       setTracks(list)
     } catch (err) {
       console.error('[Dashboard] loadTracks error:', err)
@@ -312,130 +327,146 @@ export default function Dashboard() {
     setTracksLoading(false)
   }
 
-  // ── Load daily stream history from Firestore ─────────────────────────────
-  // Expected Firestore structure:
-  //   streamHistory/{trackTitle}/days/{YYYY-MM-DD} → { count: number }
-  // OR flat:
-  //   streamHistory/{YYYY-MM-DD} → { [trackTitle]: number }
-  // We try both patterns and merge.
-  const loadDailyStreams = useCallback(async (currentTracks: Track[]) => {
+  // ── Load daily analytics from Firestore ─────────────────────────────────
+  // We try multiple patterns for both streams and replays:
+  //   Pattern A (flat daily): streams/{YYYY-MM-DD}  → { trackTitle: count }
+  //   Pattern B (per-track):  streams/{trackTitle}/days/{YYYY-MM-DD} → { count }
+  //   Pattern C (collection): streamDays/{YYYY-MM-DD}/tracks/{trackTitle} → { count }
+  //
+  // Same patterns tried for replays collection.
+  //
+  // If NO daily data exists (old setup), we distribute total counts across
+  // today so at least something shows, with a note to the user.
+  const loadDailyAnalytics = useCallback(async (currentTracks: Track[]) => {
     if (currentTracks.length === 0) return
     setAnalyticsLoading(true)
 
     const days = lastNDays(7)
-    const merged: DailyStreamMap = {}
-    days.forEach(d => { merged[d] = 0 })
+    const artistTitles = new Set(currentTracks.map(t => t.title))
 
-    try {
-      // Pattern A: flat docs  streamHistory/YYYY-MM-DD  { trackTitle: count, ... }
-      const flatResults = await Promise.allSettled(
-        days.map(async (day) => {
-          const snap = await getDoc(doc(db, 'streamHistory', day))
+    const streamsDailyMap: DailyMap = {}
+    const replaysDailyMap: DailyMap = {}
+    days.forEach(d => { streamsDailyMap[d] = 0; replaysDailyMap[d] = 0 })
+
+    async function tryFlatDaily(collectionName: string, targetMap: DailyMap) {
+      let hasData = false
+      await Promise.allSettled(days.map(async (day) => {
+        try {
+          const snap = await getDoc(doc(db, collectionName, day))
           if (snap.exists()) {
             const data = snap.data() as Record<string, number>
-            // sum all track counts for this artist
-            const artistTrackTitles = new Set(currentTracks.map(t => t.title))
             let dayTotal = 0
             for (const [key, val] of Object.entries(data)) {
-              if (artistTrackTitles.has(key)) dayTotal += (val || 0)
+              if (artistTitles.has(key)) dayTotal += (val || 0)
             }
-            return { day, count: dayTotal }
+            if (dayTotal > 0) { targetMap[day] = (targetMap[day] || 0) + dayTotal; hasData = true }
           }
-          return { day, count: 0 }
-        })
-      )
-
-      let flatHasData = false
-      flatResults.forEach(r => {
-        if (r.status === 'fulfilled' && r.value.count > 0) {
-          merged[r.value.day] = (merged[r.value.day] || 0) + r.value.count
-          flatHasData = true
-        }
-      })
-
-      // Pattern B: per-track sub-collections  streamHistory/{trackTitle}/days/{YYYY-MM-DD}
-      if (!flatHasData) {
-        await Promise.allSettled(
-          currentTracks.map(async (track) => {
-            await Promise.allSettled(
-              days.map(async (day) => {
-                try {
-                  const snap = await getDoc(
-                    doc(db, 'streamHistory', track.title, 'days', day)
-                  )
-                  if (snap.exists()) {
-                    const cnt = (snap.data()?.count as number) || 0
-                    merged[day] = (merged[day] || 0) + cnt
-                  }
-                } catch { /* ignore missing */ }
-              })
-            )
-          })
-        )
-      }
-
-      // Pattern C: top-level  streamDays/{YYYY-MM-DD}/{trackTitle}  (collection)
-      // Try reading as sub-collections of streamDays
-      if (!flatHasData && Object.values(merged).every(v => v === 0)) {
-        await Promise.allSettled(
-          days.map(async (day) => {
-            try {
-              const colSnap = await getDocs(collection(db, 'streamDays', day, 'tracks'))
-              const artistTrackTitles = new Set(currentTracks.map(t => t.title))
-              colSnap.forEach(docSnap => {
-                if (artistTrackTitles.has(docSnap.id)) {
-                  const cnt = (docSnap.data()?.count as number) || 0
-                  merged[day] = (merged[day] || 0) + cnt
-                }
-              })
-            } catch { /* ignore */ }
-          })
-        )
-      }
-
-    } catch (err) {
-      console.error('[Analytics] loadDailyStreams error:', err)
+        } catch { /* ignore */ }
+      }))
+      return hasData
     }
 
-    setDailyStreams(merged)
+    async function tryPerTrack(collectionName: string, targetMap: DailyMap) {
+      let hasData = false
+      await Promise.allSettled(currentTracks.map(async (track) => {
+        await Promise.allSettled(days.map(async (day) => {
+          try {
+            const snap = await getDoc(doc(db, collectionName, track.title, 'days', day))
+            if (snap.exists()) {
+              const cnt = (snap.data()?.count as number) || 0
+              if (cnt > 0) { targetMap[day] = (targetMap[day] || 0) + cnt; hasData = true }
+            }
+          } catch { /* ignore */ }
+        }))
+      }))
+      return hasData
+    }
+
+    async function tryDaysCollection(collectionName: string, targetMap: DailyMap) {
+      let hasData = false
+      await Promise.allSettled(days.map(async (day) => {
+        try {
+          const colSnap = await getDocs(collection(db, `${collectionName}Days`, day, 'tracks'))
+          colSnap.forEach(docSnap => {
+            if (artistTitles.has(docSnap.id)) {
+              const cnt = (docSnap.data()?.count as number) || 0
+              if (cnt > 0) { targetMap[day] = (targetMap[day] || 0) + cnt; hasData = true }
+            }
+          })
+        } catch { /* ignore */ }
+      }))
+      return hasData
+    }
+
+    // ── Try streams ────────────────────────────────────────────────────────
+    let streamsFound = await tryFlatDaily('streams', streamsDailyMap)
+    if (!streamsFound) streamsFound = await tryPerTrack('streams', streamsDailyMap)
+    if (!streamsFound) await tryDaysCollection('stream', streamsDailyMap)
+
+    // ── Try replays ───────────────────────────────────────────────────────
+    let replaysFound = await tryFlatDaily('replays', replaysDailyMap)
+    if (!replaysFound) replaysFound = await tryPerTrack('replays', replaysDailyMap)
+    if (!replaysFound) await tryDaysCollection('replay', replaysDailyMap)
+
+    // ── Fallback: if NO daily data at all, surface today's totals ─────────
+    // This makes the chart useful even without daily sub-docs, while
+    // making clear it's an all-time snapshot, not historical data.
+    const streamsAllZero = Object.values(streamsDailyMap).every(v => v === 0)
+    const replaysAllZero = Object.values(replaysDailyMap).every(v => v === 0)
+    const today = days[days.length - 1]
+
+    if (streamsAllZero) {
+      const totalStreams = currentTracks.reduce((s, t) => s + t.streams, 0)
+      if (totalStreams > 0) streamsDailyMap[today] = totalStreams
+    }
+    if (replaysAllZero) {
+      const totalReplays = currentTracks.reduce((s, t) => s + t.replays, 0)
+      if (totalReplays > 0) replaysDailyMap[today] = totalReplays
+    }
+
+    setDailyAnalytics({ streams: streamsDailyMap, replays: replaysDailyMap })
     setAnalyticsLoading(false)
   }, [])
 
-  // Re-load daily streams when tracks finish loading
   useEffect(() => {
-    if (!tracksLoading && tracks.length > 0) {
-      loadDailyStreams(tracks)
-    }
-  }, [tracksLoading, tracks, loadDailyStreams])
+    if (!tracksLoading && tracks.length > 0) loadDailyAnalytics(tracks)
+  }, [tracksLoading, tracks, loadDailyAnalytics])
 
-  // ── Derived stats ────────────────────────────────────────────────────────
-  const totalStreams = tracks.reduce((s, t) => s + t.streams, 0)
-  const totalGoa     = Math.floor(totalStreams / 10)
-  const monthlyGoa   = Math.floor(totalGoa * 0.3)
-  const zltEarned    = Math.floor(totalGoa * 0.15)
-  const listeners    = Math.floor(totalStreams * 0.6)
-  const verified     = profileData.verified || false
+  // ── Derived totals ────────────────────────────────────────────────────────
+  const totalStreams  = tracks.reduce((s, t) => s + t.streams, 0)   // unique listeners
+  const totalReplays  = tracks.reduce((s, t) => s + t.replays, 0)   // total plays
+  const repeatPlays   = Math.max(0, totalReplays - totalStreams)      // repeat/re-listens
+  const totalGoa      = Math.floor(totalReplays / 10)                 // based on total plays
+  const monthlyGoa    = Math.floor(totalGoa * 0.3)
+  const zltEarned     = Math.floor(totalGoa * 0.15)
+  const verified      = profileData.verified || false
 
-  // Daily stream chart values
-  const chartVals = analyticsdays.map(d => dailyStreams[d] || 0)
-  const todayStreams = dailyStreams[analyticsdays[analyticsdays.length - 1]] || 0
-  const yesterdayStreams = dailyStreams[analyticsdays[analyticsdays.length - 2]] || 0
-  const weekTotal = chartVals.reduce((a, b) => a + b, 0)
+  const streamChartVals  = analyticsdays.map(d => dailyAnalytics.streams[d] || 0)
+  const replayChartVals  = analyticsdays.map(d => dailyAnalytics.replays[d] || 0)
 
-  // Top genre from tracks
-  const genreCount: Record<string, number> = {}
-  tracks.forEach(t => {
-    if (t.genre) genreCount[t.genre] = (genreCount[t.genre] || 0) + t.streams
-  })
-  const topGenre = Object.entries(genreCount).sort((a, b) => b[1] - a[1])[0]?.[0] || '—'
+  const todayStreams    = dailyAnalytics.streams[analyticsdays[analyticsdays.length - 1]] || 0
+  const todayReplays   = dailyAnalytics.replays[analyticsdays[analyticsdays.length - 1]] || 0
+  const yesterStreams   = dailyAnalytics.streams[analyticsdays[analyticsdays.length - 2]] || 0
+  const yesterReplays  = dailyAnalytics.replays[analyticsdays[analyticsdays.length - 2]] || 0
+  const weekStreams     = streamChartVals.reduce((a, b) => a + b, 0)
+  const weekReplays    = replayChartVals.reduce((a, b) => a + b, 0)
 
-  // Avg streams per track
-  const avgStreams = tracks.length > 0 ? Math.round(totalStreams / tracks.length) : 0
+  const noStreamsDaily = Object.values(dailyAnalytics.streams).every(v => v === 0) || (
+    Object.entries(dailyAnalytics.streams).filter(([d]) => d !== analyticsdays[analyticsdays.length - 1]).every(([,v]) => v === 0)
+    && Object.values(dailyAnalytics.streams).some(v => v > 0)
+  )
 
-  // Stream trend vs yesterday
-  const streamTrend = yesterdayStreams > 0
-    ? ((todayStreams - yesterdayStreams) / yesterdayStreams * 100).toFixed(0)
+  const streamTrend = yesterStreams > 0
+    ? ((todayStreams - yesterStreams) / yesterStreams * 100).toFixed(0)
     : null
+  const replayTrend = yesterReplays > 0
+    ? ((todayReplays - yesterReplays) / yesterReplays * 100).toFixed(0)
+    : null
+
+  const genreCount: Record<string, number> = {}
+  tracks.forEach(t => { if (t.genre) genreCount[t.genre] = (genreCount[t.genre] || 0) + t.replays })
+  const topGenre = Object.entries(genreCount).sort((a, b) => b[1] - a[1])[0]?.[0] || '—'
+  const avgReplays = tracks.length > 0 ? Math.round(totalReplays / tracks.length) : 0
 
   // ── Upload ───────────────────────────────────────────────────────────────
   async function handleUpload() {
@@ -471,6 +502,7 @@ export default function Dashboard() {
           duration: uploadDuration,
           genre:    uploadGenre,
           streams:  0,
+          replays:  0,
         }
         setTracks(prev => [newTrack, ...prev])
       }
@@ -496,9 +528,7 @@ export default function Dashboard() {
       setTracks(prev => prev.filter(t => t.id !== deleteTarget))
       showToast('Track removed.')
       setDeleteTarget(null)
-    } catch {
-      showToast('Delete failed.', 'error')
-    }
+    } catch { showToast('Delete failed.', 'error') }
     setDeleteLoading(false)
   }
 
@@ -521,9 +551,7 @@ export default function Dashboard() {
     try {
       await setDoc(doc(db, 'artists', user.uid), data, { merge: true })
       setProfileData(prev => ({ ...prev, ...data }))
-      if (data.artistName && data.artistName !== artistName) {
-        setArtistName(data.artistName)
-      }
+      if (data.artistName && data.artistName !== artistName) setArtistName(data.artistName)
       if (profileData.airtableId) {
         const atF: Record<string, unknown> = {}
         if (data.coverArt)   atF.Cover_url   = data.coverArt
@@ -532,9 +560,7 @@ export default function Dashboard() {
         if (Object.keys(atF).length) await atPatch('Artists', profileData.airtableId, atF)
       }
       showToast('Profile saved!')
-    } catch {
-      showToast('Save failed.', 'error')
-    }
+    } catch { showToast('Save failed.', 'error') }
     setSavingProfile(false)
   }
 
@@ -549,16 +575,8 @@ export default function Dashboard() {
   // ── Loading screen ───────────────────────────────────────────────────────
   if (authLoading) {
     return (
-      <div style={{
-        minHeight: '100vh', background: T.bg,
-        display: 'flex', alignItems: 'center', justifyContent: 'center',
-        flexDirection: 'column', gap: 16,
-      }}>
-        <div style={{
-          width: 44, height: 44, border: `2px solid ${T.border2}`,
-          borderTopColor: T.accent, borderRadius: '50%',
-          animation: 'spin 0.8s linear infinite',
-        }} />
+      <div style={{ minHeight: '100vh', background: T.bg, display: 'flex', alignItems: 'center', justifyContent: 'center', flexDirection: 'column', gap: 16 }}>
+        <div style={{ width: 44, height: 44, border: `2px solid ${T.border2}`, borderTopColor: T.accent, borderRadius: '50%', animation: 'spin 0.8s linear infinite' }} />
         <style>{`@keyframes spin { to { transform: rotate(360deg); } }`}</style>
         <span style={{ color: T.muted, fontSize: 14, fontFamily: "'DM Sans', sans-serif" }}>Loading dashboard...</span>
       </div>
@@ -567,57 +585,21 @@ export default function Dashboard() {
 
   // ── Shared styles ────────────────────────────────────────────────────────
   const card: React.CSSProperties = {
-    background:   T.card,
-    border:       `1px solid ${T.border}`,
-    borderRadius: 16,
-    padding:      '24px 26px',
+    background: T.card, border: `1px solid ${T.border}`, borderRadius: 16, padding: '24px 26px',
   }
-
   const inputStyle: React.CSSProperties = {
-    width:        '100%',
-    background:   T.bg2,
-    border:       `1px solid ${T.border2}`,
-    borderRadius: 10,
-    padding:      '11px 13px',
-    color:        T.text,
-    fontFamily:   "'DM Sans', sans-serif",
-    fontSize:     14,
-    outline:      'none',
-    boxSizing:    'border-box',
+    width: '100%', background: T.bg2, border: `1px solid ${T.border2}`, borderRadius: 10,
+    padding: '11px 13px', color: T.text, fontFamily: "'DM Sans', sans-serif", fontSize: 14, outline: 'none', boxSizing: 'border-box',
   }
-
   const btnGold: React.CSSProperties = {
-    background:   T.accent,
-    color:        '#080808',
-    border:       'none',
-    borderRadius: 10,
-    padding:      '10px 18px',
-    fontFamily:   "'Poppins', sans-serif",
-    fontSize:     13,
-    fontWeight:   700,
-    cursor:       'pointer',
-    display:      'inline-flex',
-    alignItems:   'center',
-    gap:          7,
-    whiteSpace:   'nowrap' as const,
-    transition:   'opacity 0.2s',
+    background: T.accent, color: '#080808', border: 'none', borderRadius: 10, padding: '10px 18px',
+    fontFamily: "'Poppins', sans-serif", fontSize: 13, fontWeight: 700, cursor: 'pointer',
+    display: 'inline-flex', alignItems: 'center', gap: 7, whiteSpace: 'nowrap' as const, transition: 'opacity 0.2s',
   }
-
   const btnGhost: React.CSSProperties = {
-    background:   'transparent',
-    color:        T.text,
-    border:       `1px solid ${T.border2}`,
-    borderRadius: 10,
-    padding:      '10px 16px',
-    fontFamily:   "'DM Sans', sans-serif",
-    fontSize:     13,
-    fontWeight:   500,
-    cursor:       'pointer',
-    display:      'inline-flex',
-    alignItems:   'center',
-    gap:          7,
-    whiteSpace:   'nowrap' as const,
-    transition:   'background 0.2s',
+    background: 'transparent', color: T.text, border: `1px solid ${T.border2}`, borderRadius: 10, padding: '10px 16px',
+    fontFamily: "'DM Sans', sans-serif", fontSize: 13, fontWeight: 500, cursor: 'pointer',
+    display: 'inline-flex', alignItems: 'center', gap: 7, whiteSpace: 'nowrap' as const, transition: 'background 0.2s',
   }
 
   const navItems: { id: Page; label: string; icon: React.ReactNode; section?: string }[] = [
@@ -629,120 +611,64 @@ export default function Dashboard() {
     { id: 'profile',   label: 'Edit Profile', icon: <UserCircle size={16} />, section: 'PROFILE' },
   ]
 
-  // ── Nav item component ───────────────────────────────────────────────────
   function NavItem({ item }: { item: typeof navItems[0] }) {
     const active = currentPage === item.id
     return (
       <button
         onClick={() => { setCurrentPage(item.id); setSidebarOpen(false) }}
         style={{
-          width:        '100%',
-          position:     'relative',
-          display:      'flex',
-          alignItems:   'center',
-          gap:          10,
-          padding:      '9px 12px',
-          borderRadius: 10,
-          border:       `1px solid ${active ? 'rgba(51,51,51,0.7)' : 'transparent'}`,
-          background:   active ? 'rgba(0,0,0,0.5)' : 'transparent',
-          boxShadow:    active ? 'inset 0 1px 0 rgba(255,255,255,0.04), 0 -1px 0 1px rgba(51,51,51,0.25)' : 'none',
-          color:        active ? T.text : T.muted,
-          fontSize:     13,
-          fontWeight:   active ? 600 : 400,
-          fontFamily:   "'DM Sans', sans-serif",
-          cursor:       'pointer',
-          textAlign:    'left',
-          transition:   'all 0.18s',
+          width: '100%', position: 'relative', display: 'flex', alignItems: 'center', gap: 10, padding: '9px 12px',
+          borderRadius: 10, border: `1px solid ${active ? 'rgba(51,51,51,0.7)' : 'transparent'}`,
+          background: active ? 'rgba(0,0,0,0.5)' : 'transparent',
+          boxShadow: active ? 'inset 0 1px 0 rgba(255,255,255,0.04), 0 -1px 0 1px rgba(51,51,51,0.25)' : 'none',
+          color: active ? T.text : T.muted, fontSize: 13, fontWeight: active ? 600 : 400,
+          fontFamily: "'DM Sans', sans-serif", cursor: 'pointer', textAlign: 'left', transition: 'all 0.18s',
         }}
         onMouseEnter={e => { if (!active) (e.currentTarget as HTMLElement).style.background = 'rgba(255,255,255,0.03)' }}
         onMouseLeave={e => { if (!active) (e.currentTarget as HTMLElement).style.background = 'transparent' }}
       >
         {active && (
-          <span style={{
-            position:     'absolute',
-            left:         0,
-            top:          '50%',
-            transform:    'translateY(-50%)',
-            width:        3,
-            height:       18,
-            borderRadius: '0 3px 3px 0',
-            background:   T.accent,
-          }} />
+          <span style={{ position: 'absolute', left: 0, top: '50%', transform: 'translateY(-50%)', width: 3, height: 18, borderRadius: '0 3px 3px 0', background: T.accent }} />
         )}
-        <span style={{ color: active ? T.accent : 'inherit', display: 'flex', alignItems: 'center' }}>
-          {item.icon}
-        </span>
+        <span style={{ color: active ? T.accent : 'inherit', display: 'flex', alignItems: 'center' }}>{item.icon}</span>
         {item.label}
       </button>
     )
   }
 
   const picSrc   = profileData.profilePic || `https://ui-avatars.com/api/?name=${encodeURIComponent(artistName)}&background=1a1800&color=ffd700&size=200`
-  const coverSrc = profileData.coverArt   || ''
+  const coverSrc = profileData.coverArt || ''
 
-  // ── Sidebar ──────────────────────────────────────────────────────────────
   function SidebarContent() {
     return (
       <div style={{ display: 'flex', flexDirection: 'column', height: '100%' }}>
         <div style={{ display: 'flex', alignItems: 'center', gap: 10, padding: '0 4px', marginBottom: 28 }}>
           <div style={{ width: 36, height: 36, position: 'relative', flexShrink: 0 }}>
-            <Image
-              src={goaradioLogo}
-              alt="Goaradio logo"
-              fill
-              priority
-              quality={100}
-              style={{ objectFit: 'contain' }}
-            />
+            <Image src={goaradioLogo} alt="Goaradio logo" fill priority quality={100} style={{ objectFit: 'contain' }} />
           </div>
           <div>
             <div style={{ fontFamily: "'Poppins', sans-serif", fontWeight: 800, fontSize: 15, color: T.text, lineHeight: 1.1 }}>Goaradio</div>
             <div style={{ fontSize: 10, color: T.accent, fontFamily: "'DM Sans', sans-serif", letterSpacing: '0.04em', textTransform: 'uppercase' }}>for artists</div>
           </div>
         </div>
-
         <div style={{ display: 'flex', flexDirection: 'column', gap: 2, flex: 1 }}>
           {navItems.map(item => (
             <div key={item.id}>
               {item.section && (
-                <div style={{
-                  fontSize: 10, fontWeight: 700, color: T.muted2,
-                  letterSpacing: '0.1em', textTransform: 'uppercase',
-                  padding: '14px 12px 5px', fontFamily: "'DM Sans', sans-serif",
-                }}>
+                <div style={{ fontSize: 10, fontWeight: 700, color: T.muted2, letterSpacing: '0.1em', textTransform: 'uppercase', padding: '14px 12px 5px', fontFamily: "'DM Sans', sans-serif" }}>
                   {item.section}
                 </div>
               )}
               <NavItem item={item} />
             </div>
           ))}
-
           <div style={{ height: 1, background: T.border, margin: '12px 0' }} />
-
-          <button
-            onClick={() => window.open('https://goaradio.org', '_blank')}
-            style={{ ...btnGhost, width: '100%', fontSize: 13, justifyContent: 'flex-start', padding: '9px 12px', border: 'none' }}
-          >
+          <button onClick={() => window.open('https://goaradio.org', '_blank')} style={{ ...btnGhost, width: '100%', fontSize: 13, justifyContent: 'flex-start', padding: '9px 12px', border: 'none' }}>
             <ExternalLink size={15} /> View on Goaradio
           </button>
         </div>
-
-        <div style={{
-          marginTop:    'auto',
-          padding:      '12px',
-          background:   T.bg3,
-          border:       `1px solid ${T.border}`,
-          borderRadius: 12,
-          display:      'flex',
-          alignItems:   'center',
-          gap:          10,
-        }}>
-          <img
-            src={picSrc}
-            alt={artistName}
-            onError={(e) => { (e.target as HTMLImageElement).src = `https://ui-avatars.com/api/?name=${encodeURIComponent(artistName)}&background=1a1800&color=ffd700&size=200` }}
-            style={{ width: 36, height: 36, borderRadius: '50%', objectFit: 'cover', flexShrink: 0 }}
-          />
+        <div style={{ marginTop: 'auto', padding: '12px', background: T.bg3, border: `1px solid ${T.border}`, borderRadius: 12, display: 'flex', alignItems: 'center', gap: 10 }}>
+          <img src={picSrc} alt={artistName} onError={(e) => { (e.target as HTMLImageElement).src = `https://ui-avatars.com/api/?name=${encodeURIComponent(artistName)}&background=1a1800&color=ffd700&size=200` }} style={{ width: 36, height: 36, borderRadius: '50%', objectFit: 'cover', flexShrink: 0 }} />
           <div style={{ flex: 1, minWidth: 0 }}>
             <div style={{ fontSize: 13, fontWeight: 600, color: T.text, whiteSpace: 'nowrap', overflow: 'hidden', textOverflow: 'ellipsis' }}>{artistName}</div>
             <div style={{ fontSize: 11, color: verified ? T.success : T.accent, display: 'flex', alignItems: 'center', gap: 4, marginTop: 1 }}>
@@ -758,19 +684,9 @@ export default function Dashboard() {
     )
   }
 
-  // ── Stat card ────────────────────────────────────────────────────────────
-  function StatCard({ label, value, sub, icon, accent }: {
-    label: string; value: string | number; sub: string; icon: React.ReactNode; accent: string
-  }) {
+  function StatCard({ label, value, sub, icon, accent }: { label: string; value: string | number; sub: string; icon: React.ReactNode; accent: string }) {
     return (
-      <div style={{
-        background:   T.card,
-        border:       `1px solid ${T.border}`,
-        borderRadius: 14,
-        padding:      '20px 22px',
-        position:     'relative',
-        overflow:     'hidden',
-      }}>
+      <div style={{ background: T.card, border: `1px solid ${T.border}`, borderRadius: 14, padding: '20px 22px', position: 'relative', overflow: 'hidden' }}>
         <div style={{ position: 'absolute', top: 0, left: 0, right: 0, height: 2, background: accent }} />
         <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'flex-start', marginBottom: 12 }}>
           <span style={{ fontSize: 11, color: T.muted, textTransform: 'uppercase', letterSpacing: '0.06em', fontFamily: "'DM Sans', sans-serif", fontWeight: 600 }}>{label}</span>
@@ -784,7 +700,6 @@ export default function Dashboard() {
     )
   }
 
-  // ── Track row ────────────────────────────────────────────────────────────
   function TrackRow({ track, index, showActions = true }: { track: Track; index: number; showActions?: boolean }) {
     const fallback = `https://ui-avatars.com/api/?name=${encodeURIComponent(track.title)}&background=1a1800&color=ffd700&size=100`
     return (
@@ -794,18 +709,19 @@ export default function Dashboard() {
         onMouseLeave={e => (e.currentTarget.style.background = 'transparent')}
       >
         <span style={{ width: 22, textAlign: 'center', fontSize: 12, color: T.muted2, flexShrink: 0 }}>{index + 1}</span>
-        <img
-          src={track.cover || fallback}
-          alt={track.title}
-          onError={e => { (e.target as HTMLImageElement).src = fallback }}
-          style={{ width: 42, height: 42, borderRadius: 8, objectFit: 'cover', background: T.bg3, flexShrink: 0 }}
-        />
+        <img src={track.cover || fallback} alt={track.title} onError={e => { (e.target as HTMLImageElement).src = fallback }} style={{ width: 42, height: 42, borderRadius: 8, objectFit: 'cover', background: T.bg3, flexShrink: 0 }} />
         <div style={{ flex: 1, minWidth: 0 }}>
           <div style={{ fontSize: 14, fontWeight: 600, color: T.text, whiteSpace: 'nowrap', overflow: 'hidden', textOverflow: 'ellipsis' }}>{track.title}</div>
           <div style={{ fontSize: 12, color: T.muted, marginTop: 2 }}>{track.genre || track.artist} · {track.duration}</div>
         </div>
-        <div style={{ display: 'flex', alignItems: 'center', gap: 5, fontSize: 13, color: T.muted, flexShrink: 0 }}>
-          <Headphones size={12} /> {(track.streams || 0).toLocaleString()}
+        {/* Streams (unique) */}
+        <div style={{ display: 'flex', flexDirection: 'column', alignItems: 'flex-end', flexShrink: 0, gap: 2 }}>
+          <div style={{ display: 'flex', alignItems: 'center', gap: 4, fontSize: 13, color: T.text }}>
+            <Users size={11} color={T.accent} /> {(track.streams || 0).toLocaleString()}
+          </div>
+          <div style={{ display: 'flex', alignItems: 'center', gap: 4, fontSize: 11, color: T.muted }}>
+            <Repeat2 size={10} /> {(track.replays || 0).toLocaleString()} plays
+          </div>
         </div>
         {showActions && (
           <div style={{ display: 'flex', gap: 6, flexShrink: 0 }}>
@@ -840,7 +756,7 @@ export default function Dashboard() {
     )
   }
 
-  // ── Pages ────────────────────────────────────────────────────────────────
+  // ── OVERVIEW ─────────────────────────────────────────────────────────────
   function PageOverview() {
     return (
       <div>
@@ -850,51 +766,19 @@ export default function Dashboard() {
             <p style={{ fontSize: 14, color: T.muted, marginTop: 4 }}>{greet}, {artistName}</p>
           </div>
           <div style={{ display: 'flex', alignItems: 'center', gap: 10, flexWrap: 'wrap' }}>
-            <span style={{
-              display: 'inline-flex', alignItems: 'center', gap: 5,
-              padding: '5px 12px', borderRadius: 20, fontSize: 12, fontWeight: 600,
-              background: verified ? 'rgba(34,197,94,0.08)' : 'rgba(255,215,0,0.08)',
-              color:      verified ? T.success : T.accent,
-              border:     `1px solid ${verified ? 'rgba(34,197,94,0.2)' : 'rgba(255,215,0,0.2)'}`,
-            }}>
+            <span style={{ display: 'inline-flex', alignItems: 'center', gap: 5, padding: '5px 12px', borderRadius: 20, fontSize: 12, fontWeight: 600, background: verified ? 'rgba(34,197,94,0.08)' : 'rgba(255,215,0,0.08)', color: verified ? T.success : T.accent, border: `1px solid ${verified ? 'rgba(34,197,94,0.2)' : 'rgba(255,215,0,0.2)'}` }}>
               {verified ? <BadgeCheck size={12} /> : <Clock size={12} />}
               {verified ? 'Verified' : 'Pending Verification'}
             </span>
-            <button onClick={() => setCurrentPage('upload')} style={btnGold}>
-              <Plus size={14} /> Add Track
-            </button>
+            <button onClick={() => setCurrentPage('upload')} style={btnGold}><Plus size={14} /> Add Track</button>
           </div>
         </div>
 
-        <div style={{ display: 'grid', gridTemplateColumns: 'repeat(auto-fit, minmax(180px, 1fr))', gap: 14, marginBottom: 24 }}>
-          <StatCard
-            label="Total Streams"
-            value={totalStreams.toLocaleString()}
-            sub="all time"
-            icon={<TrendingUp size={16} />}
-            accent={`linear-gradient(90deg, ${T.accent}, ${T.accent2})`}
-          />
-          <StatCard
-            label="Tracks"
-            value={tracks.length}
-            sub="on Goaradio"
-            icon={<Music2 size={16} />}
-            accent="linear-gradient(90deg, #a855f7, #7c3aed)"
-          />
-          <StatCard
-            label="$GOA Earned"
-            value={totalGoa.toLocaleString()}
-            sub="stream rewards"
-            icon={<Coins size={16} />}
-            accent={`linear-gradient(90deg, ${T.accent}, #f59e0b)`}
-          />
-          <StatCard
-            label="Monthly Listeners"
-            value={listeners.toLocaleString()}
-            sub="unique users"
-            icon={<Users size={16} />}
-            accent="linear-gradient(90deg, #22c55e, #16a34a)"
-          />
+        <div style={{ display: 'grid', gridTemplateColumns: 'repeat(auto-fit, minmax(175px, 1fr))', gap: 14, marginBottom: 24 }}>
+          <StatCard label="Total Plays" value={totalReplays.toLocaleString()} sub="all time" icon={<Headphones size={16} />} accent={`linear-gradient(90deg, ${T.accent}, ${T.accent2})`} />
+          <StatCard label="Unique Listeners" value={totalStreams.toLocaleString()} sub="distinct users" icon={<Users size={16} />} accent="linear-gradient(90deg, #3b82f6, #1d4ed8)" />
+          <StatCard label="Tracks" value={tracks.length} sub="on Goaradio" icon={<Music2 size={16} />} accent="linear-gradient(90deg, #a855f7, #7c3aed)" />
+          <StatCard label="$GOA Earned" value={totalGoa.toLocaleString()} sub="stream rewards" icon={<Coins size={16} />} accent={`linear-gradient(90deg, ${T.accent}, #f59e0b)`} />
         </div>
 
         <div style={{ ...card, marginBottom: 20 }}>
@@ -928,15 +812,11 @@ export default function Dashboard() {
           <h2 style={{ fontFamily: "'Poppins', sans-serif", fontSize: 16, fontWeight: 700, color: T.text, margin: '0 0 16px' }}>Quick Actions</h2>
           <div style={{ display: 'grid', gridTemplateColumns: 'repeat(auto-fit, minmax(160px, 1fr))', gap: 12 }}>
             {[
-              { icon: <Upload size={20} style={{ color: T.accent }} />,       title: 'Upload Track',    sub: 'Add songs to Goaradio', page: 'upload'    as Page },
-              { icon: <UserCircle size={20} style={{ color: '#a855f7' }} />,  title: 'Update Profile',  sub: 'Edit your artist page', page: 'profile'   as Page },
-              { icon: <BarChart3 size={20} style={{ color: T.success }} />,   title: 'View Analytics',  sub: 'Check stream data',     page: 'analytics' as Page },
+              { icon: <Upload size={20} style={{ color: T.accent }} />,      title: 'Upload Track',   sub: 'Add songs to Goaradio', page: 'upload' as Page },
+              { icon: <UserCircle size={20} style={{ color: '#a855f7' }} />, title: 'Update Profile', sub: 'Edit your artist page', page: 'profile' as Page },
+              { icon: <BarChart3 size={20} style={{ color: T.success }} />,  title: 'View Analytics', sub: 'Check stream data',     page: 'analytics' as Page },
             ].map(item => (
-              <button
-                key={item.title}
-                onClick={() => setCurrentPage(item.page)}
-                style={{ ...btnGhost, flexDirection: 'column', alignItems: 'flex-start', gap: 8, padding: '14px 16px', height: 'auto', textAlign: 'left' }}
-              >
+              <button key={item.title} onClick={() => setCurrentPage(item.page)} style={{ ...btnGhost, flexDirection: 'column', alignItems: 'flex-start', gap: 8, padding: '14px 16px', height: 'auto', textAlign: 'left' }}>
                 {item.icon}
                 <div>
                   <div style={{ fontSize: 13, fontWeight: 600, color: T.text }}>{item.title}</div>
@@ -950,61 +830,69 @@ export default function Dashboard() {
     )
   }
 
-  // ── LIVE ANALYTICS PAGE ──────────────────────────────────────────────────
+  // ── ANALYTICS ─────────────────────────────────────────────────────────────
   function PageAnalytics() {
-    const maxBar = Math.max(...chartVals, 1)
+    // Chart: which values to draw depending on tab
+    const primaryVals  = chartTab === 'replays' ? replayChartVals : streamChartVals
+    const secondaryVals = chartTab === 'both'   ? replayChartVals : []
+    const maxBar = Math.max(...primaryVals, ...secondaryVals, 1)
+
+    const isDailyFallback = noStreamsDaily && totalStreams > 0
 
     return (
       <div>
         <div style={{ display: 'flex', alignItems: 'flex-start', justifyContent: 'space-between', marginBottom: 28, gap: 12, flexWrap: 'wrap' }}>
           <div>
             <h1 style={{ fontFamily: "'Poppins', sans-serif", fontSize: 'clamp(22px, 4vw, 28px)', fontWeight: 800, color: T.text, margin: 0 }}>Analytics</h1>
-            <p style={{ fontSize: 14, color: T.muted, marginTop: 4 }}>Live stream data from Firebase & Airtable</p>
+            <p style={{ fontSize: 14, color: T.muted, marginTop: 4 }}>Live data from Goaradio · streams = unique, plays = total</p>
           </div>
-          <button
-            onClick={() => loadDailyStreams(tracks)}
-            disabled={analyticsLoading || tracksLoading}
-            style={{ ...btnGhost, opacity: (analyticsLoading || tracksLoading) ? 0.5 : 1 }}
-          >
+          <button onClick={() => loadDailyAnalytics(tracks)} disabled={analyticsLoading || tracksLoading} style={{ ...btnGhost, opacity: (analyticsLoading || tracksLoading) ? 0.5 : 1 }}>
             <RefreshCw size={13} style={{ animation: analyticsLoading ? 'spin 0.8s linear infinite' : 'none' }} />
             Refresh
           </button>
         </div>
 
-        {/* Summary stat strip */}
+        {/* Stat strip */}
         <div style={{ display: 'grid', gridTemplateColumns: 'repeat(auto-fit, minmax(150px, 1fr))', gap: 12, marginBottom: 20 }}>
           {[
             {
               label: "Today's Streams",
               value: analyticsLoading ? '—' : todayStreams.toLocaleString(),
-              sub: streamTrend !== null
-                ? `${Number(streamTrend) >= 0 ? '▲' : '▼'} ${Math.abs(Number(streamTrend))}% vs yesterday`
-                : 'vs yesterday',
-              color: streamTrend !== null && Number(streamTrend) >= 0 ? T.success : T.danger,
+              sub: streamTrend !== null ? `${Number(streamTrend) >= 0 ? '▲' : '▼'} ${Math.abs(Number(streamTrend))}% vs yesterday` : 'unique listeners',
+              color: T.info,
             },
             {
-              label: '7-Day Total',
-              value: analyticsLoading ? '—' : weekTotal.toLocaleString(),
-              sub: 'this week',
+              label: "Today's Plays",
+              value: analyticsLoading ? '—' : todayReplays.toLocaleString(),
+              sub: replayTrend !== null ? `${Number(replayTrend) >= 0 ? '▲' : '▼'} ${Math.abs(Number(replayTrend))}% vs yesterday` : 'total plays',
               color: T.accent,
             },
             {
-              label: 'Avg / Track',
-              value: analyticsLoading ? '—' : avgStreams.toLocaleString(),
-              sub: 'mean streams',
+              label: '7-Day Streams',
+              value: analyticsLoading ? '—' : weekStreams.toLocaleString(),
+              sub: 'unique this week',
+              color: T.info,
+            },
+            {
+              label: '7-Day Plays',
+              value: analyticsLoading ? '—' : weekReplays.toLocaleString(),
+              sub: 'total this week',
+              color: T.accent,
+            },
+            {
+              label: 'Repeat Rate',
+              value: totalStreams > 0 ? `${((repeatPlays / Math.max(totalReplays, 1)) * 100).toFixed(0)}%` : '—',
+              sub: 'replays ÷ total plays',
               color: '#a855f7',
             },
             {
               label: 'Top Genre',
               value: tracksLoading ? '—' : topGenre,
-              sub: 'by stream count',
-              color: '#22c55e',
+              sub: 'by play count',
+              color: T.success,
             },
           ].map(s => (
-            <div key={s.label} style={{
-              background: T.card, border: `1px solid ${T.border}`, borderRadius: 12,
-              padding: '16px 18px', position: 'relative', overflow: 'hidden',
-            }}>
+            <div key={s.label} style={{ background: T.card, border: `1px solid ${T.border}`, borderRadius: 12, padding: '16px 18px', position: 'relative', overflow: 'hidden' }}>
               <div style={{ position: 'absolute', top: 0, left: 0, right: 0, height: 2, background: s.color }} />
               <div style={{ fontSize: 11, color: T.muted, textTransform: 'uppercase', letterSpacing: '0.06em', fontWeight: 600, marginBottom: 8 }}>{s.label}</div>
               <div style={{ fontFamily: "'Poppins', sans-serif", fontSize: 22, fontWeight: 800, color: T.text, lineHeight: 1, marginBottom: 4 }}>{s.value}</div>
@@ -1013,22 +901,52 @@ export default function Dashboard() {
           ))}
         </div>
 
-        {/* Bar chart */}
+        {/* Chart card */}
         <div style={{ ...card, marginBottom: 20 }}>
-          <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between', marginBottom: 20 }}>
+          <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between', marginBottom: 16, flexWrap: 'wrap', gap: 10 }}>
             <h2 style={{ fontFamily: "'Poppins', sans-serif", fontSize: 16, fontWeight: 700, color: T.text, margin: 0 }}>
-              Streams — Last 7 Days
+              Last 7 Days
             </h2>
-            {analyticsLoading && (
-              <span style={{ display: 'flex', alignItems: 'center', gap: 6, fontSize: 12, color: T.muted }}>
-                <Loader2 size={13} style={{ animation: 'spin 0.8s linear infinite' }} /> Loading...
-              </span>
+            <div style={{ display: 'flex', gap: 6, alignItems: 'center' }}>
+              {analyticsLoading && <Loader2 size={13} style={{ color: T.muted, animation: 'spin 0.8s linear infinite' }} />}
+              {/* Tab switcher */}
+              {(['both', 'streams', 'replays'] as const).map(tab => (
+                <button
+                  key={tab}
+                  onClick={() => setChartTab(tab)}
+                  style={{
+                    ...btnGhost,
+                    padding: '6px 12px',
+                    fontSize: 12,
+                    background: chartTab === tab ? (tab === 'replays' ? 'rgba(255,215,0,0.12)' : tab === 'streams' ? 'rgba(59,130,246,0.12)' : 'rgba(255,255,255,0.06)') : 'transparent',
+                    color: chartTab === tab ? T.text : T.muted,
+                    borderColor: chartTab === tab ? T.border2 : T.border,
+                  }}
+                >
+                  {tab === 'both' ? 'Both' : tab === 'streams' ? 'Streams' : 'Plays'}
+                </button>
+              ))}
+            </div>
+          </div>
+
+          {/* Legend */}
+          <div style={{ display: 'flex', gap: 16, marginBottom: 16, flexWrap: 'wrap' }}>
+            {(chartTab === 'both' || chartTab === 'streams') && (
+              <div style={{ display: 'flex', alignItems: 'center', gap: 6, fontSize: 12, color: T.muted }}>
+                <div style={{ width: 10, height: 10, borderRadius: 2, background: T.info }} />
+                Unique streams (listeners)
+              </div>
+            )}
+            {(chartTab === 'both' || chartTab === 'replays') && (
+              <div style={{ display: 'flex', alignItems: 'center', gap: 6, fontSize: 12, color: T.muted }}>
+                <div style={{ width: 10, height: 10, borderRadius: 2, background: T.accent }} />
+                Total plays (incl. replays)
+              </div>
             )}
           </div>
 
-          {/* Y-axis labels + bars */}
+          {/* Y-axis + bars */}
           <div style={{ display: 'flex', gap: 8 }}>
-            {/* Y axis */}
             <div style={{ display: 'flex', flexDirection: 'column', justifyContent: 'space-between', paddingBottom: 24, paddingTop: 4 }}>
               {[maxBar, Math.round(maxBar * 0.5), 0].map(v => (
                 <span key={v} style={{ fontSize: 10, color: T.muted2, textAlign: 'right', minWidth: 28 }}>
@@ -1036,39 +954,41 @@ export default function Dashboard() {
                 </span>
               ))}
             </div>
-            {/* Bars */}
-            <div style={{ flex: 1, display: 'flex', alignItems: 'flex-end', gap: 6, height: 180, paddingBottom: 24, position: 'relative' }}>
-              {/* Grid lines */}
+            <div style={{ flex: 1, display: 'flex', alignItems: 'flex-end', gap: chartTab === 'both' ? 4 : 6, height: 180, paddingBottom: 24, position: 'relative' }}>
               {[0, 50, 100].map(pct => (
-                <div key={pct} style={{
-                  position: 'absolute', left: 0, right: 0,
-                  bottom: `calc(24px + ${pct}% * (180px - 24px) / 100)`,
-                  height: 1, background: T.border, pointerEvents: 'none',
-                }} />
+                <div key={pct} style={{ position: 'absolute', left: 0, right: 0, bottom: `calc(24px + ${pct}% * (180px - 24px) / 100)`, height: 1, background: T.border, pointerEvents: 'none' }} />
               ))}
-              {chartVals.map((v, i) => {
-                const isToday = i === chartVals.length - 1
-                const heightPct = Math.max((v / maxBar) * 100, v > 0 ? 4 : 2)
+              {analyticsdays.map((day, i) => {
+                const isToday   = i === analyticsdays.length - 1
+                const sVal      = streamChartVals[i]
+                const rVal      = replayChartVals[i]
+                const sH        = Math.max((sVal / maxBar) * 100, sVal > 0 ? 3 : 1)
+                const rH        = Math.max((rVal / maxBar) * 100, rVal > 0 ? 3 : 1)
+                const pH        = Math.max((primaryVals[i] / maxBar) * 100, primaryVals[i] > 0 ? 3 : 1)
+
                 return (
-                  <div key={i} style={{ display: 'flex', flexDirection: 'column', alignItems: 'center', gap: 4, flex: 1 }}>
-                    {/* Count label above bar */}
-                    {v > 0 && (
-                      <span style={{ fontSize: 10, color: isToday ? T.accent : T.muted, fontWeight: isToday ? 700 : 400, marginBottom: 2 }}>
-                        {v > 999 ? `${(v / 1000).toFixed(1)}k` : v}
-                      </span>
+                  <div key={day} style={{ display: 'flex', flexDirection: 'column', alignItems: 'center', gap: 4, flex: 1 }}>
+                    {chartTab === 'both' ? (
+                      <div style={{ width: '100%', display: 'flex', alignItems: 'flex-end', gap: 2, height: '100%', justifyContent: 'center' }}>
+                        {/* Streams bar (blue) */}
+                        <div style={{ flex: 1, display: 'flex', flexDirection: 'column', alignItems: 'center' }}>
+                          {sVal > 0 && <span style={{ fontSize: 9, color: T.info, fontWeight: 600, marginBottom: 2 }}>{sVal > 999 ? `${(sVal/1000).toFixed(1)}k` : sVal}</span>}
+                          <div style={{ width: '100%', borderRadius: '4px 4px 0 0', height: `${sH}%`, background: isToday ? T.info : `rgba(59,130,246,0.4)`, transition: 'height 0.4s ease' }} title={`${sVal} listeners`} />
+                        </div>
+                        {/* Replays bar (gold) */}
+                        <div style={{ flex: 1, display: 'flex', flexDirection: 'column', alignItems: 'center' }}>
+                          {rVal > 0 && <span style={{ fontSize: 9, color: T.accent, fontWeight: 600, marginBottom: 2 }}>{rVal > 999 ? `${(rVal/1000).toFixed(1)}k` : rVal}</span>}
+                          <div style={{ width: '100%', borderRadius: '4px 4px 0 0', height: `${rH}%`, background: isToday ? T.accent : `rgba(255,215,0,0.4)`, transition: 'height 0.4s ease' }} title={`${rVal} plays`} />
+                        </div>
+                      </div>
+                    ) : (
+                      <div style={{ width: '100%', display: 'flex', flexDirection: 'column', alignItems: 'center', height: '100%', justifyContent: 'flex-end' }}>
+                        {primaryVals[i] > 0 && <span style={{ fontSize: 10, color: isToday ? (chartTab === 'streams' ? T.info : T.accent) : T.muted, fontWeight: isToday ? 700 : 400, marginBottom: 2 }}>{primaryVals[i] > 999 ? `${(primaryVals[i]/1000).toFixed(1)}k` : primaryVals[i]}</span>}
+                        <div style={{ width: '100%', borderRadius: '5px 5px 0 0', height: `${pH}%`, background: isToday ? (chartTab === 'streams' ? T.info : T.accent) : (chartTab === 'streams' ? 'rgba(59,130,246,0.4)' : 'rgba(255,215,0,0.4)'), transition: 'height 0.4s ease' }} />
+                      </div>
                     )}
-                    <div style={{
-                      width:        '100%',
-                      borderRadius: '5px 5px 0 0',
-                      height:       `${heightPct}%`,
-                      background:   isToday
-                        ? `linear-gradient(180deg, ${T.accent}, rgba(255,215,0,0.5))`
-                        : `linear-gradient(180deg, rgba(255,215,0,0.5), rgba(255,215,0,0.1))`,
-                      boxShadow:    isToday ? `0 0 12px rgba(255,215,0,0.3)` : 'none',
-                      transition:   'height 0.4s ease',
-                    }} title={`${v.toLocaleString()} streams`} />
-                    <span style={{ fontSize: 11, color: isToday ? T.accent : T.muted2, fontWeight: isToday ? 600 : 400 }}>
-                      {isToday ? 'Today' : dayLabel(analyticsdays[i])}
+                    <span style={{ fontSize: 10, color: isToday ? T.text : T.muted2, fontWeight: isToday ? 600 : 400 }}>
+                      {isToday ? 'Today' : dayLabel(day)}
                     </span>
                   </div>
                 )
@@ -1076,18 +996,33 @@ export default function Dashboard() {
             </div>
           </div>
 
-          {weekTotal === 0 && !analyticsLoading && (
-            <div style={{ textAlign: 'center', padding: '12px 0 0', fontSize: 13, color: T.muted }}>
-              No stream history data found for this period. Make sure your app writes to{' '}
-              <code style={{ color: T.accent, background: T.bg3, padding: '2px 6px', borderRadius: 4 }}>streamHistory/YYYY-MM-DD</code> in Firestore.
+          {/* Fallback notice */}
+          {isDailyFallback && (
+            <div style={{ marginTop: 14, padding: '10px 14px', background: 'rgba(255,215,0,0.05)', border: `1px solid rgba(255,215,0,0.15)`, borderRadius: 8, fontSize: 12, color: T.muted, display: 'flex', gap: 8, alignItems: 'flex-start' }}>
+              <AlertCircle size={14} color={T.accent} style={{ flexShrink: 0, marginTop: 1 }} />
+              <span>
+                No daily breakdown found — showing all-time totals as today. For per-day charts, write to{' '}
+                <code style={{ color: T.accent, background: T.bg3, padding: '1px 5px', borderRadius: 4 }}>streams/&lt;trackTitle&gt;/days/YYYY-MM-DD</code> and{' '}
+                <code style={{ color: T.accent, background: T.bg3, padding: '1px 5px', borderRadius: 4 }}>replays/&lt;trackTitle&gt;/days/YYYY-MM-DD</code> in Firestore.
+              </span>
             </div>
           )}
         </div>
 
+        {/* Lower row */}
         <div style={{ display: 'grid', gridTemplateColumns: 'repeat(auto-fit, minmax(280px, 1fr))', gap: 16 }}>
-          {/* Streams by track — live from tracks state */}
+
+          {/* Per-track breakdown — BOTH streams + replays */}
           <div style={card}>
-            <h2 style={{ fontFamily: "'Poppins', sans-serif", fontSize: 16, fontWeight: 700, color: T.text, margin: '0 0 18px' }}>Streams by Track</h2>
+            <h2 style={{ fontFamily: "'Poppins', sans-serif", fontSize: 16, fontWeight: 700, color: T.text, margin: '0 0 18px' }}>Per Track</h2>
+            {/* Column headers */}
+            <div style={{ display: 'flex', justifyContent: 'space-between', fontSize: 11, color: T.muted2, marginBottom: 10, paddingBottom: 8, borderBottom: `1px solid ${T.border}` }}>
+              <span>Track</span>
+              <div style={{ display: 'flex', gap: 16 }}>
+                <span style={{ color: T.info }}>Listeners</span>
+                <span style={{ color: T.accent }}>Plays</span>
+              </div>
+            </div>
             {tracksLoading ? (
               <div style={{ display: 'flex', alignItems: 'center', gap: 8, color: T.muted, fontSize: 14 }}>
                 <Loader2 size={14} style={{ animation: 'spin 0.8s linear infinite' }} /> Loading...
@@ -1096,25 +1031,19 @@ export default function Dashboard() {
               <div style={{ color: T.muted, fontSize: 14 }}>No track data yet.</div>
             ) : (
               tracks.slice(0, 8).map(t => {
-                const maxS = Math.max(...tracks.map(x => x.streams), 1)
-                const pct  = Math.max(((t.streams || 0) / maxS) * 100, 2)
+                const maxR = Math.max(...tracks.map(x => x.replays), 1)
+                const pct  = Math.max(((t.replays || 0) / maxR) * 100, 2)
                 return (
                   <div key={t.id} style={{ marginBottom: 14 }}>
-                    <div style={{ display: 'flex', justifyContent: 'space-between', fontSize: 13, marginBottom: 5 }}>
-                      <span style={{
-                        fontWeight: 600, overflow: 'hidden', textOverflow: 'ellipsis',
-                        whiteSpace: 'nowrap', maxWidth: '65%', color: T.text,
-                      }}>{t.title}</span>
-                      <span style={{ color: T.muted, flexShrink: 0 }}>
-                        {(t.streams || 0).toLocaleString()} <span style={{ color: T.muted2 }}>streams</span>
-                      </span>
+                    <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', fontSize: 13, marginBottom: 5 }}>
+                      <span style={{ fontWeight: 600, overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap', maxWidth: '55%', color: T.text }}>{t.title}</span>
+                      <div style={{ display: 'flex', gap: 14, flexShrink: 0 }}>
+                        <span style={{ color: T.info }}>{(t.streams || 0).toLocaleString()}</span>
+                        <span style={{ color: T.accent }}>{(t.replays || 0).toLocaleString()}</span>
+                      </div>
                     </div>
-                    <div style={{ height: 5, background: T.border2, borderRadius: 3, overflow: 'hidden' }}>
-                      <div style={{
-                        height: '100%', width: `${pct}%`,
-                        background: `linear-gradient(90deg, ${T.accent}, ${T.accent2})`,
-                        borderRadius: 3, transition: 'width 0.5s ease',
-                      }} />
+                    <div style={{ height: 4, background: T.border2, borderRadius: 2, overflow: 'hidden' }}>
+                      <div style={{ height: '100%', width: `${pct}%`, background: `linear-gradient(90deg, ${T.accent}, ${T.accent2})`, borderRadius: 2, transition: 'width 0.5s ease' }} />
                     </div>
                   </div>
                 )
@@ -1122,31 +1051,29 @@ export default function Dashboard() {
             )}
             {tracks.length > 0 && (
               <div style={{ marginTop: 6, fontSize: 12, color: T.muted }}>
-                {tracks.length} track{tracks.length !== 1 ? 's' : ''} · {totalStreams.toLocaleString()} total streams
+                {tracks.length} track{tracks.length !== 1 ? 's' : ''} · {totalStreams.toLocaleString()} unique listeners · {totalReplays.toLocaleString()} total plays
               </div>
             )}
           </div>
 
-          {/* Audience insight — derived from real data */}
+          {/* Audience insight */}
           <div style={card}>
-            <h2 style={{ fontFamily: "'Poppins', sans-serif", fontSize: 16, fontWeight: 700, color: T.text, margin: '0 0 18px' }}>
-              Audience Insight
-            </h2>
+            <h2 style={{ fontFamily: "'Poppins', sans-serif", fontSize: 16, fontWeight: 700, color: T.text, margin: '0 0 18px' }}>Audience Insight</h2>
             {[
-              ['Total Tracks',       tracks.length > 0 ? `${tracks.length} tracks` : '—'],
-              ['Total Streams',      totalStreams > 0 ? totalStreams.toLocaleString() : '—'],
-              ['Today\'s Streams',   analyticsLoading ? 'Loading...' : todayStreams > 0 ? todayStreams.toLocaleString() : '0'],
-              ['This Week',         analyticsLoading ? 'Loading...' : weekTotal > 0 ? weekTotal.toLocaleString() : '0'],
-              ['Top Genre',          tracksLoading ? '—' : topGenre],
-              ['Avg Streams / Track', tracks.length > 0 ? avgStreams.toLocaleString() : '—'],
-              ['Est. Listeners',     listeners > 0 ? listeners.toLocaleString() : '—'],
-              ['$GOA Earned',        totalGoa > 0 ? `${totalGoa.toLocaleString()} $GOA` : '—'],
+              ['Total Tracks',          tracks.length > 0 ? `${tracks.length}` : '—'],
+              ['Unique Listeners',       totalStreams > 0 ? totalStreams.toLocaleString() : '—'],
+              ['Total Plays',            totalReplays > 0 ? totalReplays.toLocaleString() : '—'],
+              ['Repeat Plays',           repeatPlays > 0 ? repeatPlays.toLocaleString() : '0'],
+              ['Repeat Rate',            totalReplays > 0 ? `${((repeatPlays / totalReplays) * 100).toFixed(1)}%` : '—'],
+              ["Today's Listeners",      analyticsLoading ? 'Loading...' : todayStreams.toLocaleString()],
+              ["Today's Plays",          analyticsLoading ? 'Loading...' : todayReplays.toLocaleString()],
+              ['This Week (listeners)',  analyticsLoading ? 'Loading...' : weekStreams.toLocaleString()],
+              ['This Week (plays)',      analyticsLoading ? 'Loading...' : weekReplays.toLocaleString()],
+              ['Top Genre',              tracksLoading ? '—' : topGenre],
+              ['Avg Plays / Track',      tracks.length > 0 ? avgReplays.toLocaleString() : '—'],
+              ['$GOA Earned',            totalGoa > 0 ? `${totalGoa.toLocaleString()} $GOA` : '—'],
             ].map(([label, val]) => (
-              <div key={label} style={{
-                display: 'flex', justifyContent: 'space-between', alignItems: 'center',
-                fontSize: 13, marginBottom: 13, paddingBottom: 13,
-                borderBottom: `1px solid ${T.border}`,
-              }}>
+              <div key={label} style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', fontSize: 13, marginBottom: 11, paddingBottom: 11, borderBottom: `1px solid ${T.border}` }}>
                 <span style={{ color: T.muted }}>{label}</span>
                 <span style={{ fontWeight: 600, color: T.text }}>{val}</span>
               </div>
@@ -1157,6 +1084,7 @@ export default function Dashboard() {
     )
   }
 
+  // ── EARNINGS ──────────────────────────────────────────────────────────────
   function PageEarnings() {
     return (
       <div>
@@ -1164,7 +1092,6 @@ export default function Dashboard() {
           <h1 style={{ fontFamily: "'Poppins', sans-serif", fontSize: 'clamp(22px, 4vw, 28px)', fontWeight: 800, color: T.text, margin: 0 }}>Earnings</h1>
           <p style={{ fontSize: 14, color: T.muted, marginTop: 4 }}>Your Stream-to-Earn rewards</p>
         </div>
-
         <div style={{ ...card, marginBottom: 20 }}>
           <div style={{ textAlign: 'center', padding: '12px 0 24px' }}>
             <div style={{ fontSize: 11, color: T.muted, textTransform: 'uppercase', letterSpacing: '0.06em', marginBottom: 10, fontFamily: "'DM Sans', sans-serif", fontWeight: 600 }}>Total Earned</div>
@@ -1188,7 +1115,6 @@ export default function Dashboard() {
             ))}
           </div>
         </div>
-
         <div style={card}>
           <h2 style={{ fontFamily: "'Poppins', sans-serif", fontSize: 16, fontWeight: 700, color: T.text, margin: '0 0 18px' }}>How earnings work</h2>
           <div style={{ display: 'flex', flexDirection: 'column', gap: 16 }}>
@@ -1198,12 +1124,7 @@ export default function Dashboard() {
               ['Withdraw to your wallet',       'Claim your $GOA at the end of each 30-day epoch. Connect a wallet to begin.'],
             ].map(([title, sub], i) => (
               <div key={title} style={{ display: 'flex', gap: 14, alignItems: 'flex-start' }}>
-                <div style={{
-                  width: 28, height: 28, borderRadius: 8, flexShrink: 0,
-                  background: 'rgba(255,215,0,0.08)', border: `1px solid rgba(255,215,0,0.15)`,
-                  display: 'flex', alignItems: 'center', justifyContent: 'center',
-                  fontSize: 12, fontWeight: 700, color: T.accent, fontFamily: "'Poppins', sans-serif",
-                }}>
+                <div style={{ width: 28, height: 28, borderRadius: 8, flexShrink: 0, background: 'rgba(255,215,0,0.08)', border: `1px solid rgba(255,215,0,0.15)`, display: 'flex', alignItems: 'center', justifyContent: 'center', fontSize: 12, fontWeight: 700, color: T.accent, fontFamily: "'Poppins', sans-serif" }}>
                   {i + 1}
                 </div>
                 <div>
@@ -1218,6 +1139,7 @@ export default function Dashboard() {
     )
   }
 
+  // ── TRACKS ────────────────────────────────────────────────────────────────
   function PageTracks() {
     return (
       <div>
@@ -1226,10 +1148,15 @@ export default function Dashboard() {
             <h1 style={{ fontFamily: "'Poppins', sans-serif", fontSize: 'clamp(22px, 4vw, 28px)', fontWeight: 800, color: T.text, margin: 0 }}>My Tracks</h1>
             <p style={{ fontSize: 14, color: T.muted, marginTop: 4 }}>Manage your music on Goaradio</p>
           </div>
-          <button onClick={() => setCurrentPage('upload')} style={btnGold}>
-            <Plus size={14} /> Upload Track
-          </button>
+          <button onClick={() => setCurrentPage('upload')} style={btnGold}><Plus size={14} /> Upload Track</button>
         </div>
+        {/* Column header legend */}
+        {tracks.length > 0 && (
+          <div style={{ display: 'flex', justifyContent: 'flex-end', gap: 16, fontSize: 11, color: T.muted2, marginBottom: 8, paddingRight: 4 }}>
+            <span style={{ display: 'flex', alignItems: 'center', gap: 4 }}><Users size={10} color={T.info} /> Listeners</span>
+            <span style={{ display: 'flex', alignItems: 'center', gap: 4 }}><Repeat2 size={10} /> Total Plays</span>
+          </div>
+        )}
         <div style={card}>
           {tracksLoading ? (
             <div style={{ display: 'flex', alignItems: 'center', gap: 8, color: T.muted, padding: '32px 0', fontSize: 14 }}>
@@ -1240,9 +1167,7 @@ export default function Dashboard() {
               <Music2 size={40} style={{ color: T.muted2, marginBottom: 14 }} />
               <h3 style={{ fontFamily: "'Poppins', sans-serif", fontSize: 17, color: T.text, margin: '0 0 8px' }}>No tracks yet</h3>
               <p style={{ fontSize: 14, color: T.muted, marginBottom: 20 }}>Upload your first track to get started on Goaradio.</p>
-              <button onClick={() => setCurrentPage('upload')} style={btnGold}>
-                <Upload size={14} /> Upload First Track
-              </button>
+              <button onClick={() => setCurrentPage('upload')} style={btnGold}><Upload size={14} /> Upload First Track</button>
             </div>
           ) : (
             tracks.map((t, i) => <TrackRow key={t.id} track={t} index={i} />)
@@ -1252,6 +1177,7 @@ export default function Dashboard() {
     )
   }
 
+  // ── UPLOAD ────────────────────────────────────────────────────────────────
   function PageUpload() {
     return (
       <div>
@@ -1259,7 +1185,6 @@ export default function Dashboard() {
           <h1 style={{ fontFamily: "'Poppins', sans-serif", fontSize: 'clamp(22px, 4vw, 28px)', fontWeight: 800, color: T.text, margin: 0 }}>Upload Track</h1>
           <p style={{ fontSize: 14, color: T.muted, marginTop: 4 }}>Add a new song to your Goaradio profile</p>
         </div>
-
         <div style={{ display: 'grid', gridTemplateColumns: 'repeat(auto-fit, minmax(280px, 1fr))', gap: 16, marginBottom: 16 }}>
           <div style={card}>
             <h2 style={{ fontFamily: "'Poppins', sans-serif", fontSize: 15, fontWeight: 700, color: T.text, margin: '0 0 18px' }}>Track Details</h2>
@@ -1285,17 +1210,12 @@ export default function Dashboard() {
                 <label style={{ fontSize: 12, color: T.muted, display: 'block', marginBottom: 6, fontWeight: 500 }}>Audio URL *</label>
                 <div style={{ display: 'flex', gap: 8 }}>
                   <input style={inputStyle} value={uploadAudio} onChange={e => setUploadAudio(e.target.value)} placeholder="https://... (MP3 link)" />
-                  <button onClick={() => { if (uploadAudio) setAudioPreviewUrl(uploadAudio) }} style={{ ...btnGhost, flexShrink: 0, padding: '10px 12px' }}>
-                    <Play size={13} />
-                  </button>
+                  <button onClick={() => { if (uploadAudio) setAudioPreviewUrl(uploadAudio) }} style={{ ...btnGhost, flexShrink: 0, padding: '10px 12px' }}><Play size={13} /></button>
                 </div>
-                {audioPreviewUrl && (
-                  <audio src={audioPreviewUrl} controls style={{ width: '100%', marginTop: 8, accentColor: T.accent }} />
-                )}
+                {audioPreviewUrl && <audio src={audioPreviewUrl} controls style={{ width: '100%', marginTop: 8, accentColor: T.accent }} />}
               </div>
             </div>
           </div>
-
           <div style={card}>
             <h2 style={{ fontFamily: "'Poppins', sans-serif", fontSize: 15, fontWeight: 700, color: T.text, margin: '0 0 18px' }}>Cover Art</h2>
             <div style={{ display: 'flex', flexDirection: 'column', gap: 14 }}>
@@ -1303,9 +1223,7 @@ export default function Dashboard() {
                 <label style={{ fontSize: 12, color: T.muted, display: 'block', marginBottom: 6, fontWeight: 500 }}>Cover Image URL</label>
                 <div style={{ display: 'flex', gap: 8 }}>
                   <input style={inputStyle} value={uploadCover} onChange={e => setUploadCover(e.target.value)} placeholder="https://... (image link)" />
-                  <button onClick={() => { if (uploadCover) setCoverPreviewUrl(uploadCover) }} style={{ ...btnGhost, flexShrink: 0, padding: '10px 12px' }}>
-                    <Check size={13} />
-                  </button>
+                  <button onClick={() => { if (uploadCover) setCoverPreviewUrl(uploadCover) }} style={{ ...btnGhost, flexShrink: 0, padding: '10px 12px' }}><Check size={13} /></button>
                 </div>
               </div>
               {coverPreviewUrl ? (
@@ -1326,7 +1244,6 @@ export default function Dashboard() {
             </div>
           </div>
         </div>
-
         <div style={{ ...card, display: 'flex', alignItems: 'center', justifyContent: 'space-between', flexWrap: 'wrap', gap: 16 }}>
           <div>
             <div style={{ fontSize: 15, fontWeight: 600, color: T.text, marginBottom: 4 }}>Ready to publish?</div>
@@ -1346,10 +1263,10 @@ export default function Dashboard() {
     )
   }
 
+  // ── PROFILE ────────────────────────────────────────────────────────────────
   function PageProfile() {
     const displayPic   = profPicUrl   || picSrc
     const displayCover = profCoverUrl || coverSrc
-
     return (
       <div>
         <div style={{ display: 'flex', alignItems: 'flex-start', justifyContent: 'space-between', marginBottom: 28, gap: 12, flexWrap: 'wrap' }}>
@@ -1362,13 +1279,8 @@ export default function Dashboard() {
             {savingProfile ? 'Saving...' : 'Save Changes'}
           </button>
         </div>
-
         <div style={card}>
-          <div style={{
-            position: 'relative', height: 180, borderRadius: 12, overflow: 'hidden',
-            marginBottom: 20, background: T.bg3,
-            border: displayCover ? 'none' : `2px dashed ${T.border2}`,
-          }}>
+          <div style={{ position: 'relative', height: 180, borderRadius: 12, overflow: 'hidden', marginBottom: 20, background: T.bg3, border: displayCover ? 'none' : `2px dashed ${T.border2}` }}>
             {displayCover ? (
               <img src={displayCover} alt="Cover" style={{ width: '100%', height: '100%', objectFit: 'cover' }} onError={() => setProfCoverUrl('')} />
             ) : (
@@ -1378,29 +1290,16 @@ export default function Dashboard() {
               </div>
             )}
           </div>
-
           <div style={{ display: 'flex', alignItems: 'flex-end', gap: 18, marginBottom: 22 }}>
-            <img
-              src={displayPic}
-              alt={artistName}
-              onError={e => { (e.target as HTMLImageElement).src = `https://ui-avatars.com/api/?name=${encodeURIComponent(artistName)}&background=1a1800&color=ffd700&size=200` }}
-              style={{ width: 90, height: 90, borderRadius: '50%', objectFit: 'cover', border: `3px solid ${T.bg}`, background: T.bg3, flexShrink: 0 }}
-            />
+            <img src={displayPic} alt={artistName} onError={e => { (e.target as HTMLImageElement).src = `https://ui-avatars.com/api/?name=${encodeURIComponent(artistName)}&background=1a1800&color=ffd700&size=200` }} style={{ width: 90, height: 90, borderRadius: '50%', objectFit: 'cover', border: `3px solid ${T.bg}`, background: T.bg3, flexShrink: 0 }} />
             <div>
               <div style={{ fontFamily: "'Poppins', sans-serif", fontSize: 20, fontWeight: 700, color: T.text }}>{profArtistName || artistName}</div>
-              <span style={{
-                display: 'inline-flex', alignItems: 'center', gap: 5, marginTop: 6,
-                padding: '3px 10px', borderRadius: 20, fontSize: 12, fontWeight: 600,
-                background: verified ? 'rgba(34,197,94,0.08)' : 'rgba(255,215,0,0.08)',
-                color:      verified ? T.success : T.accent,
-                border:     `1px solid ${verified ? 'rgba(34,197,94,0.2)' : 'rgba(255,215,0,0.2)'}`,
-              }}>
+              <span style={{ display: 'inline-flex', alignItems: 'center', gap: 5, marginTop: 6, padding: '3px 10px', borderRadius: 20, fontSize: 12, fontWeight: 600, background: verified ? 'rgba(34,197,94,0.08)' : 'rgba(255,215,0,0.08)', color: verified ? T.success : T.accent, border: `1px solid ${verified ? 'rgba(34,197,94,0.2)' : 'rgba(255,215,0,0.2)'}` }}>
                 {verified ? <BadgeCheck size={11} /> : <Clock size={11} />}
                 {verified ? 'Verified' : 'Pending Verification'}
               </span>
             </div>
           </div>
-
           <div style={{ display: 'grid', gridTemplateColumns: 'repeat(auto-fit, minmax(240px, 1fr))', gap: 14, padding: '16px', background: T.bg2, borderRadius: 12, border: `1px solid ${T.border}`, marginBottom: 22 }}>
             <div>
               <label style={{ fontSize: 12, color: T.muted, display: 'block', marginBottom: 6, fontWeight: 500 }}>Profile Pic URL</label>
@@ -1411,7 +1310,6 @@ export default function Dashboard() {
               <input style={inputStyle} value={profCoverUrl} onChange={e => setProfCoverUrl(e.target.value)} placeholder="https://..." />
             </div>
           </div>
-
           <div style={{ display: 'grid', gridTemplateColumns: 'repeat(auto-fit, minmax(240px, 1fr))', gap: 16 }}>
             <div>
               <label style={{ fontSize: 12, color: T.muted, display: 'block', marginBottom: 6, fontWeight: 500 }}>Artist / Stage Name</label>
@@ -1423,13 +1321,7 @@ export default function Dashboard() {
             </div>
             <div style={{ gridColumn: '1 / -1' }}>
               <label style={{ fontSize: 12, color: T.muted, display: 'block', marginBottom: 6, fontWeight: 500 }}>Bio</label>
-              <textarea
-                style={{ ...inputStyle, resize: 'vertical', minHeight: 80 }}
-                value={profBio}
-                onChange={e => setProfBio(e.target.value)}
-                placeholder="Tell fans about yourself..."
-                rows={3}
-              />
+              <textarea style={{ ...inputStyle, resize: 'vertical', minHeight: 80 }} value={profBio} onChange={e => setProfBio(e.target.value)} placeholder="Tell fans about yourself..." rows={3} />
             </div>
             <div>
               <label style={{ fontSize: 12, color: T.muted, display: 'block', marginBottom: 6, fontWeight: 500 }}>Instagram</label>
@@ -1483,32 +1375,16 @@ export default function Dashboard() {
       <div style={{ display: 'flex', minHeight: '100vh', background: T.bg, fontFamily: "'DM Sans', sans-serif" }}>
 
         {/* Desktop sidebar */}
-        <aside className="goa-sidebar" style={{
-          position: 'fixed', left: 0, top: 0, bottom: 0,
-          width: 224, background: T.bg2, borderRight: `1px solid ${T.border}`,
-          padding: '24px 16px', zIndex: 50, overflowY: 'auto',
-          display: 'flex', flexDirection: 'column',
-        }}>
+        <aside className="goa-sidebar" style={{ position: 'fixed', left: 0, top: 0, bottom: 0, width: 224, background: T.bg2, borderRight: `1px solid ${T.border}`, padding: '24px 16px', zIndex: 50, overflowY: 'auto', display: 'flex', flexDirection: 'column' }}>
           <SidebarContent />
         </aside>
 
         {/* Mobile sidebar overlay */}
         {sidebarOpen && (
           <>
-            <div
-              onClick={() => setSidebarOpen(false)}
-              style={{ position: 'fixed', inset: 0, background: 'rgba(0,0,0,0.7)', backdropFilter: 'blur(4px)', zIndex: 98 }}
-            />
-            <aside style={{
-              position: 'fixed', left: 0, top: 0, bottom: 0,
-              width: 224, background: T.bg2, borderRight: `1px solid ${T.border}`,
-              padding: '24px 16px', zIndex: 99, overflowY: 'auto',
-              display: 'flex', flexDirection: 'column',
-              animation: 'slideIn 0.2s ease',
-            }}>
-              <button onClick={() => setSidebarOpen(false)} style={{ position: 'absolute', top: 16, right: 14, background: 'none', border: 'none', color: T.muted, cursor: 'pointer' }}>
-                <X size={18} />
-              </button>
+            <div onClick={() => setSidebarOpen(false)} style={{ position: 'fixed', inset: 0, background: 'rgba(0,0,0,0.7)', backdropFilter: 'blur(4px)', zIndex: 98 }} />
+            <aside style={{ position: 'fixed', left: 0, top: 0, bottom: 0, width: 224, background: T.bg2, borderRight: `1px solid ${T.border}`, padding: '24px 16px', zIndex: 99, overflowY: 'auto', display: 'flex', flexDirection: 'column', animation: 'slideIn 0.2s ease' }}>
+              <button onClick={() => setSidebarOpen(false)} style={{ position: 'absolute', top: 16, right: 14, background: 'none', border: 'none', color: T.muted, cursor: 'pointer' }}><X size={18} /></button>
               <SidebarContent />
             </aside>
           </>
@@ -1516,22 +1392,12 @@ export default function Dashboard() {
 
         {/* Main content */}
         <main className="goa-main" style={{ flex: 1, marginLeft: 224, minHeight: '100vh', padding: '32px 32px', maxWidth: '100%' }}>
-
           {/* Mobile top bar */}
           <div className="goa-mobile-bar" style={{ display: 'none', alignItems: 'center', gap: 12, marginBottom: 20, paddingBottom: 16, borderBottom: `1px solid ${T.border}` }}>
-            <button onClick={() => setSidebarOpen(true)} style={{ background: 'none', border: `1px solid ${T.border}`, borderRadius: 8, padding: '7px 9px', color: T.text, cursor: 'pointer', display: 'flex' }}>
-              <Menu size={18} />
-            </button>
+            <button onClick={() => setSidebarOpen(true)} style={{ background: 'none', border: `1px solid ${T.border}`, borderRadius: 8, padding: '7px 9px', color: T.text, cursor: 'pointer', display: 'flex' }}><Menu size={18} /></button>
             <div style={{ display: 'flex', alignItems: 'center', gap: 8 }}>
               <div style={{ width: 28, height: 28, position: 'relative', flexShrink: 0 }}>
-                <Image
-                  src={goaradioLogo}
-                  alt="Goaradio logo"
-                  fill
-                  priority
-                  quality={100}
-                  style={{ objectFit: 'contain' }}
-                />
+                <Image src={goaradioLogo} alt="Goaradio logo" fill priority quality={100} style={{ objectFit: 'contain' }} />
               </div>
               <span style={{ fontFamily: "'Poppins', sans-serif", fontWeight: 700, fontSize: 15, color: T.text }}>Goaradio</span>
             </div>
@@ -1548,10 +1414,7 @@ export default function Dashboard() {
 
       {/* Delete confirmation modal */}
       {deleteTarget && (
-        <div
-          onClick={e => { if (e.target === e.currentTarget) setDeleteTarget(null) }}
-          style={{ position: 'fixed', inset: 0, background: 'rgba(0,0,0,0.8)', backdropFilter: 'blur(6px)', zIndex: 200, display: 'flex', alignItems: 'center', justifyContent: 'center', padding: 20 }}
-        >
+        <div onClick={e => { if (e.target === e.currentTarget) setDeleteTarget(null) }} style={{ position: 'fixed', inset: 0, background: 'rgba(0,0,0,0.8)', backdropFilter: 'blur(6px)', zIndex: 200, display: 'flex', alignItems: 'center', justifyContent: 'center', padding: 20 }}>
           <div style={{ background: T.card, border: `1px solid ${T.border2}`, borderRadius: 20, padding: 32, width: '100%', maxWidth: 360, textAlign: 'center', animation: 'slideIn 0.2s ease' }}>
             <div style={{ width: 56, height: 56, borderRadius: '50%', background: 'rgba(239,68,68,0.08)', border: '1px solid rgba(239,68,68,0.2)', display: 'flex', alignItems: 'center', justifyContent: 'center', margin: '0 auto 16px' }}>
               <Trash2 size={22} color={T.danger} />
@@ -1570,27 +1433,7 @@ export default function Dashboard() {
       )}
 
       {/* Toast */}
-      <div style={{
-        position:   'fixed',
-        bottom:     24,
-        right:      24,
-        zIndex:     300,
-        background: T.card2,
-        border:     `1px solid ${toast.type === 'success' ? 'rgba(34,197,94,0.25)' : 'rgba(239,68,68,0.25)'}`,
-        borderRadius: 12,
-        padding:    '13px 18px',
-        display:    'flex',
-        alignItems: 'center',
-        gap:        10,
-        fontSize:   14,
-        fontWeight: 500,
-        color:      T.text,
-        transform:  toast.visible ? 'translateY(0)' : 'translateY(16px)',
-        opacity:    toast.visible ? 1 : 0,
-        transition: 'all 0.3s ease',
-        pointerEvents: 'none',
-        maxWidth:   320,
-      }}>
+      <div style={{ position: 'fixed', bottom: 24, right: 24, zIndex: 300, background: T.card2, border: `1px solid ${toast.type === 'success' ? 'rgba(34,197,94,0.25)' : 'rgba(239,68,68,0.25)'}`, borderRadius: 12, padding: '13px 18px', display: 'flex', alignItems: 'center', gap: 10, fontSize: 14, fontWeight: 500, color: T.text, transform: toast.visible ? 'translateY(0)' : 'translateY(16px)', opacity: toast.visible ? 1 : 0, transition: 'all 0.3s ease', pointerEvents: 'none', maxWidth: 320 }}>
         {toast.type === 'success' ? <Check size={15} color={T.success} /> : <AlertCircle size={15} color={T.danger} />}
         {toast.msg}
       </div>
