@@ -170,14 +170,41 @@ export default function Dashboard() {
 
   // ── Auth guard ───────────────────────────────────────────────────────────
   useEffect(() => {
+    // Firebase always fires onAuthStateChanged once with `null` while it
+    // restores the persisted session from IndexedDB. We must not redirect on
+    // that first null — only after we know the session restore is done.
+    // `sessionSettled` flips to true the moment we get any non-null user OR
+    // after a 3-second safety timeout (in case Firebase never resolves).
+    let sessionSettled = false
+
+    // Safety timeout: if Firebase hasn't given us a user after 3s, it's
+    // genuinely logged out and we redirect.
+    const timeout = setTimeout(() => {
+      if (!sessionSettled) {
+        console.log('[Dashboard] auth timeout — no session after 3s, redirecting home')
+        sessionSettled = true
+        router.replace('/')
+      }
+    }, 3000)
+
     const unsub = onAuthStateChanged(auth, async (user) => {
       console.log('[Dashboard] auth state:', user ? `uid=${user.uid}` : 'null')
 
       if (!user) {
-        console.log('[Dashboard] no user → redirecting home')
+        if (!sessionSettled) {
+          // This is the initial null while Firebase restores from storage — ignore it
+          console.log('[Dashboard] initial null fire, waiting for session restore...')
+          return
+        }
+        // sessionSettled=true means a user was previously confirmed then signed out
+        console.log('[Dashboard] user signed out → redirecting home')
         router.replace('/')
         return
       }
+
+      // We have a real user — cancel the timeout and mark session as settled
+      clearTimeout(timeout)
+      sessionSettled = true
 
       // Retry up to 3 times with delay — handles race condition where navbar
       // hasn't finished writing the Firestore doc yet when dashboard mounts
@@ -202,8 +229,7 @@ export default function Dashboard() {
       }
 
       // Even if Firestore doc is missing or has no artistName, let the user in
-      // using their Firebase Auth display name as a fallback. Never kick them
-      // out just because the doc write hasn't landed yet.
+      // using their Firebase Auth display name as a fallback
       const resolvedName = data.artistName || user.displayName || user.email?.split('@')[0] || 'Artist'
       console.log('[Dashboard] resolved artist name:', resolvedName)
 
@@ -220,7 +246,11 @@ export default function Dashboard() {
       setProfCoverUrl(data.coverArt || '')
       setAuthLoading(false)
     })
-    return unsub
+
+    return () => {
+      clearTimeout(timeout)
+      unsub()
+    }
   }, [router])
 
   // ── Load tracks once we have artist name ────────────────────────────────
@@ -463,14 +493,16 @@ export default function Dashboard() {
         onClick={() => { setCurrentPage(item.id); setSidebarOpen(false) }}
         style={{
           width: '100%',
+          position: 'relative',
           display: 'flex',
           alignItems: 'center',
           gap: 10,
           padding: '9px 12px',
           borderRadius: 10,
-          border: `1px solid ${active ? 'rgba(255,215,0,0.18)' : 'transparent'}`,
-          background: active ? 'rgba(255,215,0,0.07)' : 'transparent',
-          color: active ? T.accent : T.muted,
+          border: `1px solid ${active ? 'rgba(51,51,51,0.7)' : 'transparent'}`,
+          background: active ? 'rgba(0,0,0,0.5)' : 'transparent',
+          boxShadow: active ? 'inset 0 1px 0 rgba(255,255,255,0.04), 0 -1px 0 1px rgba(51,51,51,0.25)' : 'none',
+          color: active ? T.text : T.muted,
           fontSize: 13,
           fontWeight: active ? 600 : 400,
           fontFamily: "'DM Sans', sans-serif",
@@ -478,8 +510,28 @@ export default function Dashboard() {
           textAlign: 'left',
           transition: 'all 0.18s',
         }}
+        onMouseEnter={e => {
+          if (!active) (e.currentTarget as HTMLElement).style.background = 'rgba(255,255,255,0.03)'
+        }}
+        onMouseLeave={e => {
+          if (!active) (e.currentTarget as HTMLElement).style.background = 'transparent'
+        }}
       >
-        {item.icon}
+        {active && (
+          <span style={{
+            position: 'absolute',
+            left: 0,
+            top: '50%',
+            transform: 'translateY(-50%)',
+            width: 3,
+            height: 18,
+            borderRadius: '0 3px 3px 0',
+            background: T.accent,
+          }} />
+        )}
+        <span style={{ color: active ? T.accent : 'inherit', display: 'flex', alignItems: 'center' }}>
+          {item.icon}
+        </span>
         {item.label}
       </button>
     )
