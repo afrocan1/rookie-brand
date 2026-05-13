@@ -704,18 +704,18 @@ export default function Dashboard() {
     const fallback = `https://ui-avatars.com/api/?name=${encodeURIComponent(track.title)}&background=1a1800&color=ffd700&size=100`
     return (
       <div
-        style={{ display: 'flex', alignItems: 'center', gap: 14, padding: '10px 12px', borderRadius: 10, margin: '0 -12px', transition: 'background 0.15s' }}
+        style={{ display: 'flex', alignItems: 'center', gap: 10, padding: '10px 12px', borderRadius: 10, margin: '0 -12px', transition: 'background 0.15s', flexWrap: 'wrap' }}
         onMouseEnter={e => (e.currentTarget.style.background = T.bg3)}
         onMouseLeave={e => (e.currentTarget.style.background = 'transparent')}
       >
         <span style={{ width: 22, textAlign: 'center', fontSize: 12, color: T.muted2, flexShrink: 0 }}>{index + 1}</span>
         <img src={track.cover || fallback} alt={track.title} onError={e => { (e.target as HTMLImageElement).src = fallback }} style={{ width: 42, height: 42, borderRadius: 8, objectFit: 'cover', background: T.bg3, flexShrink: 0 }} />
-        <div style={{ flex: 1, minWidth: 0 }}>
+        <div style={{ flex: 1, minWidth: 120 }}>
           <div style={{ fontSize: 14, fontWeight: 600, color: T.text, whiteSpace: 'nowrap', overflow: 'hidden', textOverflow: 'ellipsis' }}>{track.title}</div>
           <div style={{ fontSize: 12, color: T.muted, marginTop: 2 }}>{track.genre || track.artist} · {track.duration}</div>
         </div>
         {/* Streams (unique) */}
-        <div style={{ display: 'flex', flexDirection: 'column', alignItems: 'flex-end', flexShrink: 0, gap: 2 }}>
+        <div style={{ display: 'flex', flexDirection: 'column', alignItems: 'flex-end', flexShrink: 0, gap: 2, marginLeft: 'auto' }}>
           <div style={{ display: 'flex', alignItems: 'center', gap: 4, fontSize: 13, color: T.text }}>
             <Users size={11} color={T.accent} /> {(track.streams || 0).toLocaleString()}
           </div>
