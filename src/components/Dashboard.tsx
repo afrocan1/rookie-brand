@@ -1,0 +1,1311 @@
+'use client'
+
+import { useState, useEffect, useCallback } from 'react'
+import Link from 'next/link'
+import { useRouter } from 'next/navigation'
+import {
+  onAuthStateChanged,
+  signOut,
+} from 'firebase/auth'
+import {
+  doc,
+  getDoc,
+  setDoc,
+} from 'firebase/firestore'
+import { auth, db } from '@/lib/firebase'
+import {
+  LayoutDashboard,
+  BarChart3,
+  Coins,
+  Music2,
+  Upload,
+  UserCircle,
+  ExternalLink,
+  LogOut,
+  TrendingUp,
+  Users,
+  Headphones,
+  Plus,
+  Pencil,
+  Trash2,
+  Save,
+  Send,
+  Play,
+  Check,
+  Clock,
+  BadgeCheck,
+  ChevronRight,
+  Mic2,
+  Menu,
+  X,
+  Radio,
+  Loader2,
+  AlertCircle,
+} from 'lucide-react'
+
+// ─── Airtable ─────────────────────────────────────────────────────────────────
+const AT_TOKEN = 'patnr2Fyn9ZVlRavH.e54394ac6075004f3bf0d7f84a5b1a1f8bc0fbb3b2e664e487fd9d05b3bfd8e5'
+const BASE_ID  = 'appg5mgqnhZPJKDXR'
+
+async function atFetch(table: string, filter = '') {
+  let url = `https://api.airtable.com/v0/${BASE_ID}/${encodeURIComponent(table)}`
+  if (filter) url += `?filterByFormula=${encodeURIComponent(filter)}`
+  return fetch(url, { headers: { Authorization: `Bearer ${AT_TOKEN}` } })
+}
+
+async function atPatch(table: string, id: string, fields: Record<string, unknown>) {
+  return fetch(`https://api.airtable.com/v0/${BASE_ID}/${encodeURIComponent(table)}/${id}`, {
+    method: 'PATCH',
+    headers: { Authorization: `Bearer ${AT_TOKEN}`, 'Content-Type': 'application/json' },
+    body: JSON.stringify({ fields }),
+  })
+}
+
+async function atCreate(table: string, fields: Record<string, unknown>) {
+  return fetch(`https://api.airtable.com/v0/${BASE_ID}/${encodeURIComponent(table)}`, {
+    method: 'POST',
+    headers: { Authorization: `Bearer ${AT_TOKEN}`, 'Content-Type': 'application/json' },
+    body: JSON.stringify({ fields }),
+  })
+}
+
+async function atDelete(table: string, id: string) {
+  return fetch(`https://api.airtable.com/v0/${BASE_ID}/${encodeURIComponent(table)}/${id}`, {
+    method: 'DELETE',
+    headers: { Authorization: `Bearer ${AT_TOKEN}` },
+  })
+}
+
+// ─── Types ────────────────────────────────────────────────────────────────────
+interface Track {
+  id: string
+  title: string
+  artist: string
+  cover: string
+  audio: string
+  duration: string
+  genre: string
+  streams: number
+}
+
+interface ProfileData {
+  artistName?: string
+  bio?: string
+  genre?: string
+  instagram?: string
+  twitter?: string
+  spotify?: string
+  youtube?: string
+  profilePic?: string
+  coverArt?: string
+  verified?: boolean
+  airtableId?: string
+  email?: string
+}
+
+type Page = 'overview' | 'analytics' | 'earnings' | 'tracks' | 'upload' | 'profile'
+
+// ─── Theme ────────────────────────────────────────────────────────────────────
+const T = {
+  bg:      '#080808',
+  bg2:     '#0f0f0f',
+  bg3:     '#161616',
+  card:    '#111111',
+  card2:   '#131313',
+  border:  'rgba(255,255,255,0.06)',
+  border2: 'rgba(255,255,255,0.1)',
+  accent:  '#ffd700',
+  accent2: '#ffb800',
+  text:    '#f5f5f0',
+  muted:   '#777770',
+  muted2:  '#333330',
+  success: '#22c55e',
+  danger:  '#ef4444',
+}
+
+// ─── Toast ────────────────────────────────────────────────────────────────────
+interface ToastState { msg: string; type: 'success' | 'error'; visible: boolean }
+
+// ─── Main Component ───────────────────────────────────────────────────────────
+export default function Dashboard() {
+  const router = useRouter()
+
+  const [currentPage, setCurrentPage] = useState<Page>('overview')
+  const [sidebarOpen, setSidebarOpen] = useState(false)
+  const [profileData, setProfileData] = useState<ProfileData>({})
+  const [artistName, setArtistName]   = useState('')
+  const [tracks, setTracks]           = useState<Track[]>([])
+  const [tracksLoading, setTracksLoading] = useState(true)
+  const [authLoading, setAuthLoading] = useState(true)
+  const [toast, setToast]             = useState<ToastState>({ msg: '', type: 'success', visible: false })
+  const [deleteTarget, setDeleteTarget] = useState<string | null>(null)
+  const [deleteLoading, setDeleteLoading] = useState(false)
+
+  // Upload state
+  const [uploadTitle, setUploadTitle]     = useState('')
+  const [uploadAudio, setUploadAudio]     = useState('')
+  const [uploadCover, setUploadCover]     = useState('')
+  const [uploadDuration, setUploadDuration] = useState('')
+  const [uploadGenre, setUploadGenre]     = useState('')
+  const [uploading, setUploading]         = useState(false)
+  const [uploadProgress, setUploadProgress] = useState(0)
+  const [audioPreviewUrl, setAudioPreviewUrl] = useState('')
+  const [coverPreviewUrl, setCoverPreviewUrl] = useState('')
+
+  // Profile edit state
+  const [profArtistName, setProfArtistName] = useState('')
+  const [profBio, setProfBio]               = useState('')
+  const [profGenre, setProfGenre]           = useState('')
+  const [profInstagram, setProfInstagram]   = useState('')
+  const [profTwitter, setProfTwitter]       = useState('')
+  const [profSpotify, setProfSpotify]       = useState('')
+  const [profYoutube, setProfYoutube]       = useState('')
+  const [profPicUrl, setProfPicUrl]         = useState('')
+  const [profCoverUrl, setProfCoverUrl]     = useState('')
+  const [savingProfile, setSavingProfile]   = useState(false)
+
+  const showToast = useCallback((msg: string, type: 'success' | 'error' = 'success') => {
+    setToast({ msg, type, visible: true })
+    setTimeout(() => setToast(t => ({ ...t, visible: false })), 3500)
+  }, [])
+
+  // ── Auth guard ───────────────────────────────────────────────────────────
+  useEffect(() => {
+    const unsub = onAuthStateChanged(auth, async (user) => {
+      if (!user) {
+        router.replace('/')
+        return
+      }
+      const snap = await getDoc(doc(db, 'artists', user.uid))
+      if (!snap.exists() || !snap.data()?.artistName) {
+        router.replace('/')
+        return
+      }
+      const data = snap.data() as ProfileData
+      setProfileData(data)
+      setArtistName(data.artistName || user.displayName || 'Artist')
+      setProfArtistName(data.artistName || '')
+      setProfBio(data.bio || '')
+      setProfGenre(data.genre || '')
+      setProfInstagram(data.instagram || '')
+      setProfTwitter(data.twitter || '')
+      setProfSpotify(data.spotify || '')
+      setProfYoutube(data.youtube || '')
+      setProfPicUrl(data.profilePic || '')
+      setProfCoverUrl(data.coverArt || '')
+      setAuthLoading(false)
+    })
+    return unsub
+  }, [router])
+
+  // ── Load tracks once we have artist name ────────────────────────────────
+  useEffect(() => {
+    if (!artistName) return
+    loadTracks(artistName)
+  // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [artistName])
+
+  async function loadTracks(name: string) {
+    setTracksLoading(true)
+    try {
+      const res  = await atFetch('Tracks', `Artist="${name}"`)
+      const data = await res.json()
+      // eslint-disable-next-line @typescript-eslint/no-explicit-any
+      const list: Track[] = (data.records || []).map((r: any) => ({
+        id:       r.id,
+        title:    r.fields.Title    || 'Untitled',
+        artist:   r.fields.Artist   || name,
+        cover:    r.fields.Cover_url || '',
+        audio:    r.fields.Audio_url || '',
+        duration: r.fields.Duration  || '--:--',
+        genre:    r.fields.Genre     || '',
+        streams:  r.fields.Streams   || 0,
+      }))
+      list.sort((a, b) => b.streams - a.streams)
+      setTracks(list)
+    } catch {
+      showToast('Could not load tracks.', 'error')
+    }
+    setTracksLoading(false)
+  }
+
+  // ── Stats ────────────────────────────────────────────────────────────────
+  const totalStreams   = tracks.reduce((s, t) => s + t.streams, 0)
+  const totalGoa       = Math.floor(totalStreams / 10)
+  const monthlyGoA     = Math.floor(totalGoa * 0.3)
+  const zltEarned      = Math.floor(totalGoa * 0.15)
+  const listeners      = Math.floor(totalStreams * 0.6)
+  const verified       = profileData.verified || false
+
+  // ── Upload ───────────────────────────────────────────────────────────────
+  async function handleUpload() {
+    if (!uploadTitle.trim() || !uploadAudio.trim()) {
+      showToast('Title and Audio URL are required.', 'error')
+      return
+    }
+    setUploading(true)
+    setUploadProgress(0)
+    const iv = setInterval(() => setUploadProgress(p => Math.min(p + 10, 80)), 120)
+    try {
+      const fields: Record<string, unknown> = {
+        Title: uploadTitle.trim(),
+        Artist: artistName,
+        Audio_url: uploadAudio.trim(),
+        Duration: uploadDuration.trim(),
+      }
+      if (uploadCover.trim()) fields.Cover_url = uploadCover.trim()
+      if (uploadGenre)        fields.Genre     = uploadGenre
+      const res  = await atCreate('Tracks', fields)
+      const data = await res.json()
+      clearInterval(iv)
+      setUploadProgress(100)
+      if (data.id) {
+        const newTrack: Track = {
+          id: data.id, title: uploadTitle, artist: artistName,
+          cover: uploadCover || '', audio: uploadAudio,
+          duration: uploadDuration, genre: uploadGenre, streams: 0,
+        }
+        setTracks(prev => [newTrack, ...prev])
+      }
+      showToast('Track published to Goaradio!')
+      setUploadTitle(''); setUploadAudio(''); setUploadCover('')
+      setUploadDuration(''); setUploadGenre(''); setAudioPreviewUrl(''); setCoverPreviewUrl('')
+    } catch {
+      clearInterval(iv)
+      showToast('Publish failed. Check console.', 'error')
+    }
+    setUploading(false)
+    setTimeout(() => setUploadProgress(0), 1000)
+  }
+
+  // ── Delete ───────────────────────────────────────────────────────────────
+  async function confirmDelete() {
+    if (!deleteTarget) return
+    setDeleteLoading(true)
+    try {
+      await atDelete('Tracks', deleteTarget)
+      setTracks(prev => prev.filter(t => t.id !== deleteTarget))
+      showToast('Track removed.')
+      setDeleteTarget(null)
+    } catch {
+      showToast('Delete failed.', 'error')
+    }
+    setDeleteLoading(false)
+  }
+
+  // ── Save Profile ─────────────────────────────────────────────────────────
+  async function saveProfile() {
+    setSavingProfile(true)
+    const user = auth.currentUser
+    if (!user) return
+    const data: ProfileData = {
+      artistName:  profArtistName || artistName,
+      bio:         profBio,
+      genre:       profGenre,
+      instagram:   profInstagram,
+      twitter:     profTwitter,
+      spotify:     profSpotify,
+      youtube:     profYoutube,
+      profilePic:  profPicUrl || profileData.profilePic || '',
+      coverArt:    profCoverUrl || profileData.coverArt || '',
+    }
+    try {
+      await setDoc(doc(db, 'artists', user.uid), data, { merge: true })
+      setProfileData(prev => ({ ...prev, ...data }))
+      if (data.artistName && data.artistName !== artistName) {
+        setArtistName(data.artistName)
+      }
+      if (profileData.airtableId) {
+        const atF: Record<string, unknown> = {}
+        if (data.coverArt)   atF.Cover_url    = data.coverArt
+        if (data.profilePic) atF.Profile_pic  = data.profilePic
+        if (data.bio)        atF.Bio          = data.bio
+        if (Object.keys(atF).length) await atPatch('Artists', profileData.airtableId, atF)
+      }
+      showToast('Profile saved!')
+    } catch {
+      showToast('Save failed.', 'error')
+    }
+    setSavingProfile(false)
+  }
+
+  async function handleLogout() {
+    await signOut(auth)
+    router.replace('/')
+  }
+
+  // ── Chart data ───────────────────────────────────────────────────────────
+  const days      = ['Mon', 'Tue', 'Wed', 'Thu', 'Fri', 'Sat', 'Sun']
+  const maxStream = Math.max(totalStreams * 0.25, 10)
+  const chartVals = days.map((_, i) =>
+    Math.floor(Math.random() * maxStream * (i >= 5 ? 1.4 : 1))
+  )
+  const chartPeak = Math.max(...chartVals, 1)
+
+  // ── Greeting ─────────────────────────────────────────────────────────────
+  const hour   = new Date().getHours()
+  const greet  = hour < 12 ? 'Good morning' : hour < 18 ? 'Good afternoon' : 'Good evening'
+
+  if (authLoading) {
+    return (
+      <div style={{
+        minHeight: '100vh', background: T.bg,
+        display: 'flex', alignItems: 'center', justifyContent: 'center',
+        flexDirection: 'column', gap: 16,
+      }}>
+        <div style={{
+          width: 44, height: 44, border: `2px solid ${T.border2}`,
+          borderTopColor: T.accent, borderRadius: '50%',
+          animation: 'spin 0.8s linear infinite',
+        }} />
+        <style>{`@keyframes spin { to { transform: rotate(360deg); } }`}</style>
+        <span style={{ color: T.muted, fontSize: 14, fontFamily: "'DM Sans', sans-serif" }}>Loading dashboard...</span>
+      </div>
+    )
+  }
+
+  // ─────────────────────────────────────────────────────────────────────────
+  // SHARED STYLES
+  // ─────────────────────────────────────────────────────────────────────────
+  const card: React.CSSProperties = {
+    background: T.card,
+    border: `1px solid ${T.border}`,
+    borderRadius: 16,
+    padding: '24px 26px',
+  }
+
+  const inputStyle: React.CSSProperties = {
+    width: '100%',
+    background: T.bg2,
+    border: `1px solid ${T.border2}`,
+    borderRadius: 10,
+    padding: '11px 13px',
+    color: T.text,
+    fontFamily: "'DM Sans', sans-serif",
+    fontSize: 14,
+    outline: 'none',
+    boxSizing: 'border-box',
+  }
+
+  const btnGold: React.CSSProperties = {
+    background: T.accent,
+    color: '#080808',
+    border: 'none',
+    borderRadius: 10,
+    padding: '10px 18px',
+    fontFamily: "'Syne', sans-serif",
+    fontSize: 13,
+    fontWeight: 700,
+    cursor: 'pointer',
+    display: 'inline-flex',
+    alignItems: 'center',
+    gap: 7,
+    whiteSpace: 'nowrap' as const,
+    transition: 'opacity 0.2s',
+  }
+
+  const btnGhost: React.CSSProperties = {
+    background: 'transparent',
+    color: T.text,
+    border: `1px solid ${T.border2}`,
+    borderRadius: 10,
+    padding: '10px 16px',
+    fontFamily: "'DM Sans', sans-serif",
+    fontSize: 13,
+    fontWeight: 500,
+    cursor: 'pointer',
+    display: 'inline-flex',
+    alignItems: 'center',
+    gap: 7,
+    whiteSpace: 'nowrap' as const,
+    transition: 'background 0.2s',
+  }
+
+  // ─── NAV ITEMS ────────────────────────────────────────────────────────────
+  const navItems: { id: Page; label: string; icon: React.ReactNode; section?: string }[] = [
+    { id: 'overview',  label: 'Dashboard',  icon: <LayoutDashboard size={16} />, section: 'OVERVIEW' },
+    { id: 'analytics', label: 'Analytics',  icon: <BarChart3 size={16} /> },
+    { id: 'earnings',  label: 'Earnings',   icon: <Coins size={16} /> },
+    { id: 'tracks',    label: 'My Tracks',  icon: <Music2 size={16} />, section: 'MY MUSIC' },
+    { id: 'upload',    label: 'Upload',     icon: <Upload size={16} /> },
+    { id: 'profile',   label: 'Edit Profile', icon: <UserCircle size={16} />, section: 'PROFILE' },
+  ]
+
+  function NavItem({ item }: { item: typeof navItems[0] }) {
+    const active = currentPage === item.id
+    return (
+      <button
+        onClick={() => { setCurrentPage(item.id); setSidebarOpen(false) }}
+        style={{
+          width: '100%',
+          display: 'flex',
+          alignItems: 'center',
+          gap: 10,
+          padding: '9px 12px',
+          borderRadius: 10,
+          border: `1px solid ${active ? 'rgba(255,215,0,0.18)' : 'transparent'}`,
+          background: active ? 'rgba(255,215,0,0.07)' : 'transparent',
+          color: active ? T.accent : T.muted,
+          fontSize: 13,
+          fontWeight: active ? 600 : 400,
+          fontFamily: "'DM Sans', sans-serif",
+          cursor: 'pointer',
+          textAlign: 'left',
+          transition: 'all 0.18s',
+        }}
+      >
+        {item.icon}
+        {item.label}
+      </button>
+    )
+  }
+
+  const picSrc    = profileData.profilePic || `https://ui-avatars.com/api/?name=${encodeURIComponent(artistName)}&background=1a1800&color=ffd700&size=200`
+  const coverSrc  = profileData.coverArt || ''
+
+  // ─── SIDEBAR CONTENT ─────────────────────────────────────────────────────
+  function SidebarContent() {
+    return (
+      <div style={{ display: 'flex', flexDirection: 'column', height: '100%' }}>
+        {/* Logo */}
+        <div style={{ display: 'flex', alignItems: 'center', gap: 10, padding: '0 4px', marginBottom: 28 }}>
+          <div style={{
+            width: 34, height: 34, borderRadius: 9,
+            background: `linear-gradient(135deg, ${T.accent}, ${T.accent2})`,
+            display: 'flex', alignItems: 'center', justifyContent: 'center',
+          }}>
+            <Radio size={16} color="#080808" />
+          </div>
+          <div>
+            <div style={{ fontFamily: "'Syne', sans-serif", fontWeight: 800, fontSize: 15, color: T.text, lineHeight: 1.1 }}>Goaradio</div>
+            <div style={{ fontSize: 10, color: T.accent, fontFamily: "'DM Sans', sans-serif", letterSpacing: '0.04em', textTransform: 'uppercase' }}>for artists</div>
+          </div>
+        </div>
+
+        {/* Nav */}
+        <div style={{ display: 'flex', flexDirection: 'column', gap: 2, flex: 1 }}>
+          {navItems.map(item => (
+            <div key={item.id}>
+              {item.section && (
+                <div style={{
+                  fontSize: 10, fontWeight: 700, color: T.muted2,
+                  letterSpacing: '0.1em', textTransform: 'uppercase',
+                  padding: '14px 12px 5px', fontFamily: "'DM Sans', sans-serif",
+                }}>
+                  {item.section}
+                </div>
+              )}
+              <NavItem item={item} />
+            </div>
+          ))}
+
+          <div style={{ height: 1, background: T.border, margin: '12px 0' }} />
+
+          <button
+            onClick={() => window.open('https://goaradio.org', '_blank')}
+            style={{ ...btnGhost, width: '100%', fontSize: 13, justifyContent: 'flex-start', padding: '9px 12px', border: 'none' }}
+          >
+            <ExternalLink size={15} /> View on Goaradio
+          </button>
+        </div>
+
+        {/* Artist card at bottom */}
+        <div style={{
+          marginTop: 'auto',
+          padding: '12px',
+          background: T.bg3,
+          border: `1px solid ${T.border}`,
+          borderRadius: 12,
+          display: 'flex',
+          alignItems: 'center',
+          gap: 10,
+        }}>
+          <img
+            src={picSrc}
+            alt={artistName}
+            onError={(e) => { (e.target as HTMLImageElement).src = `https://ui-avatars.com/api/?name=${encodeURIComponent(artistName)}&background=1a1800&color=ffd700&size=200` }}
+            style={{ width: 36, height: 36, borderRadius: '50%', objectFit: 'cover', flexShrink: 0 }}
+          />
+          <div style={{ flex: 1, minWidth: 0 }}>
+            <div style={{ fontSize: 13, fontWeight: 600, color: T.text, whiteSpace: 'nowrap', overflow: 'hidden', textOverflow: 'ellipsis' }}>{artistName}</div>
+            <div style={{ fontSize: 11, color: verified ? T.success : T.accent, display: 'flex', alignItems: 'center', gap: 4, marginTop: 1 }}>
+              {verified ? <BadgeCheck size={10} /> : <Clock size={10} />}
+              {verified ? 'Verified' : 'Pending'}
+            </div>
+          </div>
+          <button onClick={handleLogout} style={{ background: 'none', border: 'none', color: T.muted, cursor: 'pointer', padding: 4, display: 'flex' }}>
+            <LogOut size={15} />
+          </button>
+        </div>
+      </div>
+    )
+  }
+
+  // ─── STAT CARD ───────────────────────────────────────────────────────────
+  function StatCard({ label, value, sub, icon, accent }: {
+    label: string; value: string | number; sub: string; icon: React.ReactNode; accent: string
+  }) {
+    return (
+      <div style={{
+        background: T.card,
+        border: `1px solid ${T.border}`,
+        borderRadius: 14,
+        padding: '20px 22px',
+        position: 'relative',
+        overflow: 'hidden',
+      }}>
+        <div style={{ position: 'absolute', top: 0, left: 0, right: 0, height: 2, background: accent }} />
+        <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'flex-start', marginBottom: 12 }}>
+          <span style={{ fontSize: 11, color: T.muted, textTransform: 'uppercase', letterSpacing: '0.06em', fontFamily: "'DM Sans', sans-serif", fontWeight: 600 }}>{label}</span>
+          <span style={{ color: T.muted, opacity: 0.6 }}>{icon}</span>
+        </div>
+        <div style={{ fontFamily: "'Syne', sans-serif", fontSize: 28, fontWeight: 800, color: T.text, lineHeight: 1, marginBottom: 6 }}>{value}</div>
+        <div style={{ fontSize: 12, color: T.muted, display: 'flex', alignItems: 'center', gap: 4 }}>{sub}</div>
+      </div>
+    )
+  }
+
+  // ─── TRACK ROW ────────────────────────────────────────────────────────────
+  function TrackRow({ track, index, showActions = true }: { track: Track; index: number; showActions?: boolean }) {
+    const fallback = `https://ui-avatars.com/api/?name=${encodeURIComponent(track.title)}&background=1a1800&color=ffd700&size=100`
+    return (
+      <div style={{
+        display: 'flex', alignItems: 'center', gap: 14,
+        padding: '10px 12px', borderRadius: 10, margin: '0 -12px',
+        transition: 'background 0.15s',
+      }}
+        onMouseEnter={e => (e.currentTarget.style.background = T.bg3)}
+        onMouseLeave={e => (e.currentTarget.style.background = 'transparent')}
+      >
+        <span style={{ width: 22, textAlign: 'center', fontSize: 12, color: T.muted2, flexShrink: 0 }}>{index + 1}</span>
+        <img
+          src={track.cover || fallback}
+          alt={track.title}
+          onError={e => { (e.target as HTMLImageElement).src = fallback }}
+          style={{ width: 42, height: 42, borderRadius: 8, objectFit: 'cover', background: T.bg3, flexShrink: 0 }}
+        />
+        <div style={{ flex: 1, minWidth: 0 }}>
+          <div style={{ fontSize: 14, fontWeight: 600, color: T.text, whiteSpace: 'nowrap', overflow: 'hidden', textOverflow: 'ellipsis' }}>{track.title}</div>
+          <div style={{ fontSize: 12, color: T.muted, marginTop: 2 }}>{track.genre || track.artist} · {track.duration}</div>
+        </div>
+        <div style={{ display: 'flex', alignItems: 'center', gap: 5, fontSize: 13, color: T.muted, flexShrink: 0 }}>
+          <Headphones size={12} /> {(track.streams || 0).toLocaleString()}
+        </div>
+        {showActions && (
+          <div style={{ display: 'flex', gap: 6, flexShrink: 0 }}>
+            <button
+              title="Edit"
+              onClick={() => {
+                const newTitle = prompt('Edit track title:', track.title)
+                if (!newTitle || newTitle === track.title) return
+                atPatch('Tracks', track.id, { Title: newTitle }).then(() => {
+                  setTracks(prev => prev.map(t => t.id === track.id ? { ...t, title: newTitle } : t))
+                  showToast('Track updated!')
+                }).catch(() => showToast('Update failed.', 'error'))
+              }}
+              style={{
+                width: 30, height: 30, borderRadius: 7, border: `1px solid ${T.border}`,
+                background: 'transparent', color: T.muted, cursor: 'pointer', display: 'flex',
+                alignItems: 'center', justifyContent: 'center', transition: 'all 0.15s',
+              }}
+              onMouseEnter={e => { (e.currentTarget.style.background = T.bg3); (e.currentTarget.style.color = T.text) }}
+              onMouseLeave={e => { (e.currentTarget.style.background = 'transparent'); (e.currentTarget.style.color = T.muted) }}
+            >
+              <Pencil size={12} />
+            </button>
+            <button
+              title="Delete"
+              onClick={() => setDeleteTarget(track.id)}
+              style={{
+                width: 30, height: 30, borderRadius: 7, border: `1px solid ${T.border}`,
+                background: 'transparent', color: T.muted, cursor: 'pointer', display: 'flex',
+                alignItems: 'center', justifyContent: 'center', transition: 'all 0.15s',
+              }}
+              onMouseEnter={e => { (e.currentTarget.style.background = 'rgba(239,68,68,0.1)'); (e.currentTarget.style.color = T.danger) }}
+              onMouseLeave={e => { (e.currentTarget.style.background = 'transparent'); (e.currentTarget.style.color = T.muted) }}
+            >
+              <Trash2 size={12} />
+            </button>
+          </div>
+        )}
+      </div>
+    )
+  }
+
+  // ─────────────────────────────────────────────────────────────────────────
+  // PAGE: OVERVIEW
+  // ─────────────────────────────────────────────────────────────────────────
+  function PageOverview() {
+    return (
+      <div>
+        <div style={{ display: 'flex', alignItems: 'flex-start', justifyContent: 'space-between', marginBottom: 28, gap: 12, flexWrap: 'wrap' }}>
+          <div>
+            <h1 style={{ fontFamily: "'Syne', sans-serif", fontSize: 'clamp(22px, 4vw, 28px)', fontWeight: 800, color: T.text, margin: 0 }}>Dashboard</h1>
+            <p style={{ fontSize: 14, color: T.muted, marginTop: 4 }}>{greet}, {artistName}</p>
+          </div>
+          <div style={{ display: 'flex', alignItems: 'center', gap: 10, flexWrap: 'wrap' }}>
+            <span style={{
+              display: 'inline-flex', alignItems: 'center', gap: 5,
+              padding: '5px 12px', borderRadius: 20, fontSize: 12, fontWeight: 600,
+              background: verified ? 'rgba(34,197,94,0.08)' : 'rgba(255,215,0,0.08)',
+              color: verified ? T.success : T.accent,
+              border: `1px solid ${verified ? 'rgba(34,197,94,0.2)' : 'rgba(255,215,0,0.2)'}`,
+            }}>
+              {verified ? <BadgeCheck size={12} /> : <Clock size={12} />}
+              {verified ? 'Verified' : 'Pending Verification'}
+            </span>
+            <button onClick={() => setCurrentPage('upload')} style={btnGold}>
+              <Plus size={14} /> Add Track
+            </button>
+          </div>
+        </div>
+
+        {/* Stats */}
+        <div style={{ display: 'grid', gridTemplateColumns: 'repeat(auto-fit, minmax(180px, 1fr))', gap: 14, marginBottom: 24 }}>
+          <StatCard label="Total Streams" value={totalStreams.toLocaleString()} sub="all time" icon={<TrendingUp size={16} />} accent={`linear-gradient(90deg, ${T.accent}, ${T.accent2})`} />
+          <StatCard label="Tracks" value={tracks.length} sub="on Goaradio" icon={<Music2 size={16} />} accent="linear-gradient(90deg, #a855f7, #7c3aed)" />
+          <StatCard label="$GOA Earned" value={totalGoa.toLocaleString()} sub="stream rewards" icon={<Coins size={16} />} accent={`linear-gradient(90deg, ${T.accent}, #f59e0b)`} />
+          <StatCard label="Monthly Listeners" value={listeners.toLocaleString()} sub="unique users" icon={<Users size={16} />} accent="linear-gradient(90deg, #22c55e, #16a34a)" />
+        </div>
+
+        {/* Top tracks */}
+        <div style={{ ...card, marginBottom: 20 }}>
+          <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between', marginBottom: 18 }}>
+            <h2 style={{ fontFamily: "'Syne', sans-serif", fontSize: 16, fontWeight: 700, color: T.text, margin: 0 }}>Top Tracks</h2>
+            <span style={{ display: 'flex', alignItems: 'center', gap: 5, fontSize: 12, color: T.success, fontWeight: 600 }}>
+              <span style={{ width: 6, height: 6, borderRadius: '50%', background: T.success, display: 'inline-block', animation: 'pulseDot 2s infinite' }} />
+              Live
+            </span>
+          </div>
+          {tracksLoading ? (
+            <div style={{ display: 'flex', alignItems: 'center', gap: 8, color: T.muted, padding: '20px 0', fontSize: 14 }}>
+              <Loader2 size={16} style={{ animation: 'spin 0.8s linear infinite' }} /> Loading tracks...
+            </div>
+          ) : tracks.length === 0 ? (
+            <div style={{ textAlign: 'center', padding: '32px 0', color: T.muted }}>
+              <Music2 size={32} style={{ opacity: 0.3, marginBottom: 10 }} />
+              <p style={{ fontSize: 14 }}>No tracks yet. Upload your first track.</p>
+            </div>
+          ) : (
+            tracks.slice(0, 5).map((t, i) => <TrackRow key={t.id} track={t} index={i} showActions={false} />)
+          )}
+          {tracks.length > 0 && (
+            <button
+              onClick={() => setCurrentPage('tracks')}
+              style={{ ...btnGhost, marginTop: 14, fontSize: 13 }}
+            >
+              View all tracks <ChevronRight size={13} />
+            </button>
+          )}
+        </div>
+
+        {/* Quick actions */}
+        <div style={card}>
+          <h2 style={{ fontFamily: "'Syne', sans-serif", fontSize: 16, fontWeight: 700, color: T.text, margin: '0 0 16px' }}>Quick Actions</h2>
+          <div style={{ display: 'grid', gridTemplateColumns: 'repeat(auto-fit, minmax(160px, 1fr))', gap: 12 }}>
+            {[
+              { icon: <Upload size={20} style={{ color: T.accent }} />, title: 'Upload Track', sub: 'Add songs to Goaradio', page: 'upload' as Page },
+              { icon: <UserCircle size={20} style={{ color: '#a855f7' }} />, title: 'Update Profile', sub: 'Edit your artist page', page: 'profile' as Page },
+              { icon: <BarChart3 size={20} style={{ color: T.success }} />, title: 'View Analytics', sub: 'Check stream data', page: 'analytics' as Page },
+            ].map(item => (
+              <button
+                key={item.title}
+                onClick={() => setCurrentPage(item.page)}
+                style={{
+                  ...btnGhost,
+                  flexDirection: 'column',
+                  alignItems: 'flex-start',
+                  gap: 8,
+                  padding: '14px 16px',
+                  height: 'auto',
+                  textAlign: 'left',
+                }}
+              >
+                {item.icon}
+                <div>
+                  <div style={{ fontSize: 13, fontWeight: 600, color: T.text }}>{item.title}</div>
+                  <div style={{ fontSize: 12, color: T.muted, fontWeight: 400, marginTop: 2 }}>{item.sub}</div>
+                </div>
+              </button>
+            ))}
+          </div>
+        </div>
+      </div>
+    )
+  }
+
+  // ─────────────────────────────────────────────────────────────────────────
+  // PAGE: ANALYTICS
+  // ─────────────────────────────────────────────────────────────────────────
+  function PageAnalytics() {
+    const maxBar = Math.max(...chartVals, 1)
+    return (
+      <div>
+        <div style={{ marginBottom: 28 }}>
+          <h1 style={{ fontFamily: "'Syne', sans-serif", fontSize: 'clamp(22px, 4vw, 28px)', fontWeight: 800, color: T.text, margin: 0 }}>Analytics</h1>
+          <p style={{ fontSize: 14, color: T.muted, marginTop: 4 }}>Stream data for your music</p>
+        </div>
+
+        <div style={{ ...card, marginBottom: 20 }}>
+          <h2 style={{ fontFamily: "'Syne', sans-serif", fontSize: 16, fontWeight: 700, color: T.text, margin: '0 0 20px' }}>Streams — Last 7 Days</h2>
+          <div style={{ display: 'flex', alignItems: 'flex-end', gap: 8, height: 160, paddingBottom: 24, position: 'relative' }}>
+            {chartVals.map((v, i) => (
+              <div key={i} style={{ display: 'flex', flexDirection: 'column', alignItems: 'center', gap: 4, flex: 1 }}>
+                <div style={{
+                  width: '100%', borderRadius: '5px 5px 0 0',
+                  height: `${Math.max((v / maxBar) * 100, 4)}%`,
+                  background: `linear-gradient(180deg, ${T.accent}, rgba(255,215,0,0.2))`,
+                  transition: 'opacity 0.2s',
+                  cursor: 'default',
+                }}
+                  title={`${v} streams`}
+                />
+                <span style={{ fontSize: 11, color: T.muted2 }}>{days[i]}</span>
+              </div>
+            ))}
+          </div>
+        </div>
+
+        <div style={{ display: 'grid', gridTemplateColumns: 'repeat(auto-fit, minmax(280px, 1fr))', gap: 16 }}>
+          <div style={card}>
+            <h2 style={{ fontFamily: "'Syne', sans-serif", fontSize: 16, fontWeight: 700, color: T.text, margin: '0 0 18px' }}>Streams by Track</h2>
+            {tracksLoading ? (
+              <div style={{ color: T.muted, fontSize: 14 }}>Loading...</div>
+            ) : tracks.length === 0 ? (
+              <div style={{ color: T.muted, fontSize: 14 }}>No track data yet.</div>
+            ) : (
+              tracks.slice(0, 6).map(t => {
+                const maxS = Math.max(...tracks.map(x => x.streams), 1)
+                return (
+                  <div key={t.id} style={{ marginBottom: 14 }}>
+                    <div style={{ display: 'flex', justifyContent: 'space-between', fontSize: 13, marginBottom: 4 }}>
+                      <span style={{ fontWeight: 600, overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap', maxWidth: '65%', color: T.text }}>{t.title}</span>
+                      <span style={{ color: T.muted }}>{(t.streams || 0).toLocaleString()}</span>
+                    </div>
+                    <div style={{ height: 4, background: T.border2, borderRadius: 2, overflow: 'hidden' }}>
+                      <div style={{ height: '100%', width: `${Math.max(((t.streams || 0) / maxS) * 100, 2)}%`, background: `linear-gradient(90deg, ${T.accent}, ${T.accent2})`, borderRadius: 2 }} />
+                    </div>
+                  </div>
+                )
+              })
+            )}
+          </div>
+
+          <div style={card}>
+            <h2 style={{ fontFamily: "'Syne', sans-serif", fontSize: 16, fontWeight: 700, color: T.text, margin: '0 0 18px' }}>Audience Insight</h2>
+            {[
+              ['Top Country', '🇬🇭 Ghana'],
+              ['Avg. Stream Duration', '2m 14s'],
+              ['Repeat Listeners', '61%'],
+              ['Mobile vs Desktop', '78% / 22%'],
+              ['Peak Hour', '8 PM – 10 PM'],
+            ].map(([label, val]) => (
+              <div key={label} style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', fontSize: 14, marginBottom: 14 }}>
+                <span style={{ color: T.muted }}>{label}</span>
+                <span style={{ fontWeight: 600, color: T.text }}>{val}</span>
+              </div>
+            ))}
+          </div>
+        </div>
+      </div>
+    )
+  }
+
+  // ─────────────────────────────────────────────────────────────────────────
+  // PAGE: EARNINGS
+  // ─────────────────────────────────────────────────────────────────────────
+  function PageEarnings() {
+    return (
+      <div>
+        <div style={{ marginBottom: 28 }}>
+          <h1 style={{ fontFamily: "'Syne', sans-serif", fontSize: 'clamp(22px, 4vw, 28px)', fontWeight: 800, color: T.text, margin: 0 }}>Earnings</h1>
+          <p style={{ fontSize: 14, color: T.muted, marginTop: 4 }}>Your Stream-to-Earn rewards</p>
+        </div>
+
+        <div style={{ ...card, marginBottom: 20 }}>
+          <div style={{ textAlign: 'center', padding: '12px 0 24px' }}>
+            <div style={{ fontSize: 11, color: T.muted, textTransform: 'uppercase', letterSpacing: '0.06em', marginBottom: 10, fontFamily: "'DM Sans', sans-serif", fontWeight: 600 }}>Total Earned</div>
+            <div style={{ fontFamily: "'Syne', sans-serif", fontSize: 'clamp(42px, 10vw, 60px)', fontWeight: 800, lineHeight: 1, color: T.text }}>{totalGoa.toLocaleString()}</div>
+            <div style={{ fontSize: 16, color: T.accent, fontWeight: 700, marginTop: 6 }}>$GOA</div>
+          </div>
+
+          <div style={{ display: 'grid', gridTemplateColumns: 'repeat(auto-fit, minmax(140px, 1fr))', gap: 12 }}>
+            {[
+              { label: 'This Month', value: monthlyGoA, token: '$GOA' },
+              { label: 'Last Month', value: '—', token: '$GOA' },
+              { label: '$ZLT Earned', value: zltEarned, token: '$ZLT' },
+              { label: 'Pending Payout', value: '—', token: 'Review in 30 days' },
+            ].map(item => (
+              <div key={item.label} style={{ background: T.bg2, border: `1px solid ${T.border}`, borderRadius: 10, padding: '14px 16px' }}>
+                <div style={{ fontSize: 12, color: T.muted, marginBottom: 8 }}>{item.label}</div>
+                <div style={{ fontFamily: "'Syne', sans-serif", fontSize: 20, fontWeight: 700, color: T.text }}>{item.value}</div>
+                <div style={{ fontSize: 11, color: T.muted2, marginTop: 2 }}>{item.token}</div>
+              </div>
+            ))}
+          </div>
+        </div>
+
+        <div style={card}>
+          <h2 style={{ fontFamily: "'Syne', sans-serif", fontSize: 16, fontWeight: 700, color: T.text, margin: '0 0 18px' }}>How earnings work</h2>
+          <div style={{ display: 'flex', flexDirection: 'column', gap: 16 }}>
+            {[
+              ['Listeners stream your tracks', 'Every unique stream on Goaradio is logged in real-time.'],
+              ['$GOA tokens are allocated', 'Artists receive $GOA proportional to their total stream count each epoch.'],
+              ['Withdraw to your wallet', 'Claim your $GOA at the end of each 30-day epoch. Connect a wallet to begin.'],
+            ].map(([title, sub], i) => (
+              <div key={title} style={{ display: 'flex', gap: 14, alignItems: 'flex-start' }}>
+                <div style={{
+                  width: 28, height: 28, borderRadius: 8, flexShrink: 0,
+                  background: 'rgba(255,215,0,0.08)', border: `1px solid rgba(255,215,0,0.15)`,
+                  display: 'flex', alignItems: 'center', justifyContent: 'center',
+                  fontSize: 12, fontWeight: 700, color: T.accent, fontFamily: "'Syne', sans-serif",
+                }}>
+                  {i + 1}
+                </div>
+                <div>
+                  <div style={{ fontSize: 14, fontWeight: 600, color: T.text, marginBottom: 3 }}>{title}</div>
+                  <div style={{ fontSize: 13, color: T.muted, lineHeight: 1.6 }}>{sub}</div>
+                </div>
+              </div>
+            ))}
+          </div>
+        </div>
+      </div>
+    )
+  }
+
+  // ─────────────────────────────────────────────────────────────────────────
+  // PAGE: TRACKS
+  // ─────────────────────────────────────────────────────────────────────────
+  function PageTracks() {
+    return (
+      <div>
+        <div style={{ display: 'flex', alignItems: 'flex-start', justifyContent: 'space-between', marginBottom: 28, gap: 12, flexWrap: 'wrap' }}>
+          <div>
+            <h1 style={{ fontFamily: "'Syne', sans-serif", fontSize: 'clamp(22px, 4vw, 28px)', fontWeight: 800, color: T.text, margin: 0 }}>My Tracks</h1>
+            <p style={{ fontSize: 14, color: T.muted, marginTop: 4 }}>Manage your music on Goaradio</p>
+          </div>
+          <button onClick={() => setCurrentPage('upload')} style={btnGold}>
+            <Plus size={14} /> Upload Track
+          </button>
+        </div>
+
+        <div style={card}>
+          {tracksLoading ? (
+            <div style={{ display: 'flex', alignItems: 'center', gap: 8, color: T.muted, padding: '32px 0', fontSize: 14 }}>
+              <Loader2 size={16} style={{ animation: 'spin 0.8s linear infinite' }} /> Loading your tracks...
+            </div>
+          ) : tracks.length === 0 ? (
+            <div style={{ textAlign: 'center', padding: '48px 24px' }}>
+              <Music2 size={40} style={{ color: T.muted2, marginBottom: 14 }} />
+              <h3 style={{ fontFamily: "'Syne', sans-serif", fontSize: 17, color: T.text, margin: '0 0 8px' }}>No tracks yet</h3>
+              <p style={{ fontSize: 14, color: T.muted, marginBottom: 20 }}>Upload your first track to get started on Goaradio.</p>
+              <button onClick={() => setCurrentPage('upload')} style={btnGold}>
+                <Upload size={14} /> Upload First Track
+              </button>
+            </div>
+          ) : (
+            tracks.map((t, i) => <TrackRow key={t.id} track={t} index={i} />)
+          )}
+        </div>
+      </div>
+    )
+  }
+
+  // ─────────────────────────────────────────────────────────────────────────
+  // PAGE: UPLOAD
+  // ─────────────────────────────────────────────────────────────────────────
+  function PageUpload() {
+    return (
+      <div>
+        <div style={{ marginBottom: 28 }}>
+          <h1 style={{ fontFamily: "'Syne', sans-serif", fontSize: 'clamp(22px, 4vw, 28px)', fontWeight: 800, color: T.text, margin: 0 }}>Upload Track</h1>
+          <p style={{ fontSize: 14, color: T.muted, marginTop: 4 }}>Add a new song to your Goaradio profile</p>
+        </div>
+
+        <div style={{ display: 'grid', gridTemplateColumns: 'repeat(auto-fit, minmax(280px, 1fr))', gap: 16, marginBottom: 16 }}>
+          {/* Track details */}
+          <div style={card}>
+            <h2 style={{ fontFamily: "'Syne', sans-serif", fontSize: 15, fontWeight: 700, color: T.text, margin: '0 0 18px' }}>Track Details</h2>
+            <div style={{ display: 'flex', flexDirection: 'column', gap: 14 }}>
+              <div>
+                <label style={{ fontSize: 12, color: T.muted, display: 'block', marginBottom: 6, fontWeight: 500 }}>Track Title *</label>
+                <input style={inputStyle} value={uploadTitle} onChange={e => setUploadTitle(e.target.value)} placeholder="Enter track name" />
+              </div>
+              <div>
+                <label style={{ fontSize: 12, color: T.muted, display: 'block', marginBottom: 6, fontWeight: 500 }}>Genre</label>
+                <select
+                  style={{ ...inputStyle, appearance: 'none' }}
+                  value={uploadGenre}
+                  onChange={e => setUploadGenre(e.target.value)}
+                >
+                  <option value="">Select genre</option>
+                  {['Afrobeats','Afropop','Highlife','Dancehall','Hip Hop','Amapiano','Gospel','R&B','Reggae','Other'].map(g => (
+                    <option key={g} value={g}>{g}</option>
+                  ))}
+                </select>
+              </div>
+              <div>
+                <label style={{ fontSize: 12, color: T.muted, display: 'block', marginBottom: 6, fontWeight: 500 }}>Duration (e.g. 3:45)</label>
+                <input style={inputStyle} value={uploadDuration} onChange={e => setUploadDuration(e.target.value)} placeholder="3:45" />
+              </div>
+              <div>
+                <label style={{ fontSize: 12, color: T.muted, display: 'block', marginBottom: 6, fontWeight: 500 }}>Audio URL *</label>
+                <div style={{ display: 'flex', gap: 8 }}>
+                  <input style={{ ...inputStyle }} value={uploadAudio} onChange={e => setUploadAudio(e.target.value)} placeholder="https://... (MP3 link)" />
+                  <button
+                    onClick={() => { if (uploadAudio) setAudioPreviewUrl(uploadAudio) }}
+                    style={{ ...btnGhost, flexShrink: 0, padding: '10px 12px' }}
+                  >
+                    <Play size={13} />
+                  </button>
+                </div>
+                {audioPreviewUrl && (
+                  <audio src={audioPreviewUrl} controls style={{ width: '100%', marginTop: 8, accentColor: T.accent }} />
+                )}
+              </div>
+            </div>
+          </div>
+
+          {/* Cover art */}
+          <div style={card}>
+            <h2 style={{ fontFamily: "'Syne', sans-serif", fontSize: 15, fontWeight: 700, color: T.text, margin: '0 0 18px' }}>Cover Art</h2>
+            <div style={{ display: 'flex', flexDirection: 'column', gap: 14 }}>
+              <div>
+                <label style={{ fontSize: 12, color: T.muted, display: 'block', marginBottom: 6, fontWeight: 500 }}>Cover Image URL</label>
+                <div style={{ display: 'flex', gap: 8 }}>
+                  <input style={inputStyle} value={uploadCover} onChange={e => setUploadCover(e.target.value)} placeholder="https://... (image link)" />
+                  <button
+                    onClick={() => { if (uploadCover) setCoverPreviewUrl(uploadCover) }}
+                    style={{ ...btnGhost, flexShrink: 0, padding: '10px 12px' }}
+                  >
+                    <Check size={13} />
+                  </button>
+                </div>
+              </div>
+
+              {coverPreviewUrl ? (
+                <img src={coverPreviewUrl} alt="Cover preview" style={{ width: 130, height: 130, borderRadius: 12, objectFit: 'cover', border: `1px solid ${T.border2}` }} />
+              ) : (
+                <div style={{
+                  border: `2px dashed ${T.border2}`, borderRadius: 12,
+                  padding: '32px 24px', textAlign: 'center', color: T.muted,
+                }}>
+                  <Upload size={28} style={{ opacity: 0.4, marginBottom: 8 }} />
+                  <p style={{ fontSize: 13, margin: '0 0 4px' }}>Paste a URL above to preview</p>
+                  <p style={{ fontSize: 12, color: T.muted2 }}>JPG, PNG, WEBP recommended</p>
+                </div>
+              )}
+
+              <p style={{ fontSize: 12, color: T.muted2 }}>
+                Host images on <a href="https://imgur.com" target="_blank" rel="noreferrer" style={{ color: T.accent, textDecoration: 'none' }}>Imgur</a> or <a href="https://cloudinary.com" target="_blank" rel="noreferrer" style={{ color: T.accent, textDecoration: 'none' }}>Cloudinary</a>.
+              </p>
+            </div>
+          </div>
+        </div>
+
+        {/* Publish */}
+        <div style={{ ...card, display: 'flex', alignItems: 'center', justifyContent: 'space-between', flexWrap: 'wrap', gap: 16 }}>
+          <div>
+            <div style={{ fontSize: 15, fontWeight: 600, color: T.text, marginBottom: 4 }}>Ready to publish?</div>
+            <div style={{ fontSize: 13, color: T.muted }}>This will add the track to your Airtable record and make it visible on Goaradio.</div>
+          </div>
+          <button
+            onClick={handleUpload}
+            disabled={uploading}
+            style={{ ...btnGold, padding: '12px 24px', fontSize: 14, opacity: uploading ? 0.7 : 1 }}
+          >
+            {uploading ? <Loader2 size={15} style={{ animation: 'spin 0.8s linear infinite' }} /> : <Send size={15} />}
+            {uploading ? 'Publishing...' : 'Publish Track'}
+          </button>
+          {uploadProgress > 0 && (
+            <div style={{ width: '100%', height: 4, background: T.border2, borderRadius: 2, overflow: 'hidden' }}>
+              <div style={{ height: '100%', width: `${uploadProgress}%`, background: `linear-gradient(90deg, ${T.accent}, ${T.accent2})`, borderRadius: 2, transition: 'width 0.3s' }} />
+            </div>
+          )}
+        </div>
+      </div>
+    )
+  }
+
+  // ─────────────────────────────────────────────────────────────────────────
+  // PAGE: PROFILE
+  // ─────────────────────────────────────────────────────────────────────────
+  function PageProfile() {
+    const displayPic   = profPicUrl || picSrc
+    const displayCover = profCoverUrl || coverSrc
+
+    return (
+      <div>
+        <div style={{ display: 'flex', alignItems: 'flex-start', justifyContent: 'space-between', marginBottom: 28, gap: 12, flexWrap: 'wrap' }}>
+          <div>
+            <h1 style={{ fontFamily: "'Syne', sans-serif", fontSize: 'clamp(22px, 4vw, 28px)', fontWeight: 800, color: T.text, margin: 0 }}>Edit Profile</h1>
+            <p style={{ fontSize: 14, color: T.muted, marginTop: 4 }}>Changes sync to your Goaradio artist page</p>
+          </div>
+          <button onClick={saveProfile} disabled={savingProfile} style={{ ...btnGold, opacity: savingProfile ? 0.7 : 1 }}>
+            {savingProfile ? <Loader2 size={14} style={{ animation: 'spin 0.8s linear infinite' }} /> : <Save size={14} />}
+            {savingProfile ? 'Saving...' : 'Save Changes'}
+          </button>
+        </div>
+
+        <div style={card}>
+          {/* Cover */}
+          <div style={{
+            position: 'relative', height: 180, borderRadius: 12, overflow: 'hidden',
+            marginBottom: 20, background: T.bg3,
+            border: displayCover ? 'none' : `2px dashed ${T.border2}`,
+          }}>
+            {displayCover ? (
+              <img src={displayCover} alt="Cover" style={{ width: '100%', height: '100%', objectFit: 'cover' }} onError={() => setProfCoverUrl('')} />
+            ) : (
+              <div style={{ width: '100%', height: '100%', display: 'flex', flexDirection: 'column', alignItems: 'center', justifyContent: 'center', gap: 8, color: T.muted }}>
+                <Mic2 size={32} style={{ opacity: 0.3 }} />
+                <span style={{ fontSize: 13 }}>No cover art set</span>
+              </div>
+            )}
+          </div>
+
+          {/* Pic + name */}
+          <div style={{ display: 'flex', alignItems: 'flex-end', gap: 18, marginBottom: 22 }}>
+            <div style={{ position: 'relative', flexShrink: 0 }}>
+              <img
+                src={displayPic}
+                alt={artistName}
+                onError={e => { (e.target as HTMLImageElement).src = `https://ui-avatars.com/api/?name=${encodeURIComponent(artistName)}&background=1a1800&color=ffd700&size=200` }}
+                style={{ width: 90, height: 90, borderRadius: '50%', objectFit: 'cover', border: `3px solid ${T.bg}`, background: T.bg3 }}
+              />
+            </div>
+            <div>
+              <div style={{ fontFamily: "'Syne', sans-serif", fontSize: 20, fontWeight: 700, color: T.text }}>{profArtistName || artistName}</div>
+              <span style={{
+                display: 'inline-flex', alignItems: 'center', gap: 5, marginTop: 6,
+                padding: '3px 10px', borderRadius: 20, fontSize: 12, fontWeight: 600,
+                background: verified ? 'rgba(34,197,94,0.08)' : 'rgba(255,215,0,0.08)',
+                color: verified ? T.success : T.accent,
+                border: `1px solid ${verified ? 'rgba(34,197,94,0.2)' : 'rgba(255,215,0,0.2)'}`,
+              }}>
+                {verified ? <BadgeCheck size={11} /> : <Clock size={11} />}
+                {verified ? 'Verified' : 'Pending Verification'}
+              </span>
+            </div>
+          </div>
+
+          {/* URL fields */}
+          <div style={{ display: 'grid', gridTemplateColumns: 'repeat(auto-fit, minmax(240px, 1fr))', gap: 14, padding: '16px', background: T.bg2, borderRadius: 12, border: `1px solid ${T.border}`, marginBottom: 22 }}>
+            <div>
+              <label style={{ fontSize: 12, color: T.muted, display: 'block', marginBottom: 6, fontWeight: 500 }}>Profile Pic URL</label>
+              <div style={{ display: 'flex', gap: 8 }}>
+                <input style={inputStyle} value={profPicUrl} onChange={e => setProfPicUrl(e.target.value)} placeholder="https://..." />
+              </div>
+            </div>
+            <div>
+              <label style={{ fontSize: 12, color: T.muted, display: 'block', marginBottom: 6, fontWeight: 500 }}>Cover Art URL</label>
+              <div style={{ display: 'flex', gap: 8 }}>
+                <input style={inputStyle} value={profCoverUrl} onChange={e => setProfCoverUrl(e.target.value)} placeholder="https://..." />
+              </div>
+            </div>
+          </div>
+
+          {/* Bio + socials */}
+          <div style={{ display: 'grid', gridTemplateColumns: 'repeat(auto-fit, minmax(240px, 1fr))', gap: 16 }}>
+            <div>
+              <label style={{ fontSize: 12, color: T.muted, display: 'block', marginBottom: 6, fontWeight: 500 }}>Artist / Stage Name</label>
+              <input style={inputStyle} value={profArtistName} onChange={e => setProfArtistName(e.target.value)} placeholder="Your artist name" />
+            </div>
+            <div>
+              <label style={{ fontSize: 12, color: T.muted, display: 'block', marginBottom: 6, fontWeight: 500 }}>Genre</label>
+              <input style={inputStyle} value={profGenre} onChange={e => setProfGenre(e.target.value)} placeholder="e.g. Afrobeats, Highlife" />
+            </div>
+            <div style={{ gridColumn: '1 / -1' }}>
+              <label style={{ fontSize: 12, color: T.muted, display: 'block', marginBottom: 6, fontWeight: 500 }}>Bio</label>
+              <textarea
+                style={{ ...inputStyle, resize: 'vertical', minHeight: 80 }}
+                value={profBio}
+                onChange={e => setProfBio(e.target.value)}
+                placeholder="Tell fans about yourself..."
+                rows={3}
+              />
+            </div>
+            <div>
+              <label style={{ fontSize: 12, color: T.muted, display: 'block', marginBottom: 6, fontWeight: 500 }}>Instagram</label>
+              <input style={inputStyle} value={profInstagram} onChange={e => setProfInstagram(e.target.value)} placeholder="@yourhandle" />
+            </div>
+            <div>
+              <label style={{ fontSize: 12, color: T.muted, display: 'block', marginBottom: 6, fontWeight: 500 }}>X (Twitter)</label>
+              <input style={inputStyle} value={profTwitter} onChange={e => setProfTwitter(e.target.value)} placeholder="@yourhandle" />
+            </div>
+            <div>
+              <label style={{ fontSize: 12, color: T.muted, display: 'block', marginBottom: 6, fontWeight: 500 }}>Spotify Link</label>
+              <input style={inputStyle} value={profSpotify} onChange={e => setProfSpotify(e.target.value)} placeholder="https://open.spotify.com/artist/..." />
+            </div>
+            <div>
+              <label style={{ fontSize: 12, color: T.muted, display: 'block', marginBottom: 6, fontWeight: 500 }}>YouTube</label>
+              <input style={inputStyle} value={profYoutube} onChange={e => setProfYoutube(e.target.value)} placeholder="https://youtube.com/@..." />
+            </div>
+          </div>
+        </div>
+      </div>
+    )
+  }
+
+  // ─────────────────────────────────────────────────────────────────────────
+  // RENDER
+  // ─────────────────────────────────────────────────────────────────────────
+  return (
+    <>
+      <style>{`
+        @import url('https://fonts.googleapis.com/css2?family=Syne:wght@400;600;700;800&family=DM+Sans:wght@300;400;500;600&display=swap');
+        @keyframes spin { to { transform: rotate(360deg); } }
+        @keyframes pulseDot { 0%,100% { opacity:1; } 50% { opacity:0.3; } }
+        @keyframes slideIn { from { transform: translateY(12px); opacity: 0; } to { transform: translateY(0); opacity: 1; } }
+        * { box-sizing: border-box; }
+        body { background: ${T.bg} !important; }
+        ::-webkit-scrollbar { width: 4px; }
+        ::-webkit-scrollbar-track { background: transparent; }
+        ::-webkit-scrollbar-thumb { background: ${T.muted2}; border-radius: 2px; }
+        input::placeholder, textarea::placeholder { color: ${T.muted2} !important; }
+        input, textarea, select { color-scheme: dark; }
+        option { background: #111 !important; }
+      `}</style>
+
+      <div style={{ display: 'flex', minHeight: '100vh', background: T.bg, fontFamily: "'DM Sans', sans-serif" }}>
+
+        {/* ── DESKTOP SIDEBAR ── */}
+        <aside style={{
+          position: 'fixed', left: 0, top: 0, bottom: 0,
+          width: 224, background: T.bg2, borderRight: `1px solid ${T.border}`,
+          padding: '24px 16px', zIndex: 50, overflowY: 'auto',
+          display: 'flex', flexDirection: 'column',
+        }}
+          className="goa-sidebar"
+        >
+          <SidebarContent />
+        </aside>
+
+        {/* ── MOBILE SIDEBAR OVERLAY ── */}
+        {sidebarOpen && (
+          <>
+            <div
+              onClick={() => setSidebarOpen(false)}
+              style={{ position: 'fixed', inset: 0, background: 'rgba(0,0,0,0.7)', backdropFilter: 'blur(4px)', zIndex: 98 }}
+            />
+            <aside style={{
+              position: 'fixed', left: 0, top: 0, bottom: 0,
+              width: 224, background: T.bg2, borderRight: `1px solid ${T.border}`,
+              padding: '24px 16px', zIndex: 99, overflowY: 'auto',
+              display: 'flex', flexDirection: 'column',
+              animation: 'slideIn 0.2s ease',
+            }}>
+              <button
+                onClick={() => setSidebarOpen(false)}
+                style={{ position: 'absolute', top: 16, right: 14, background: 'none', border: 'none', color: T.muted, cursor: 'pointer' }}
+              >
+                <X size={18} />
+              </button>
+              <SidebarContent />
+            </aside>
+          </>
+        )}
+
+        {/* ── MAIN ── */}
+        <main style={{ flex: 1, marginLeft: 224, minHeight: '100vh', padding: '32px 32px', maxWidth: '100%' }} className="goa-main">
+
+          {/* Mobile top bar */}
+          <div style={{ display: 'none', alignItems: 'center', gap: 12, marginBottom: 20, paddingBottom: 16, borderBottom: `1px solid ${T.border}` }}
+            className="goa-mobile-bar"
+          >
+            <button
+              onClick={() => setSidebarOpen(true)}
+              style={{ background: 'none', border: `1px solid ${T.border}`, borderRadius: 8, padding: '7px 9px', color: T.text, cursor: 'pointer', display: 'flex' }}
+            >
+              <Menu size={18} />
+            </button>
+            <div style={{ display: 'flex', alignItems: 'center', gap: 8 }}>
+              <div style={{ width: 26, height: 26, borderRadius: 6, background: `linear-gradient(135deg, ${T.accent}, ${T.accent2})`, display: 'flex', alignItems: 'center', justifyContent: 'center' }}>
+                <Radio size={13} color="#080808" />
+              </div>
+              <span style={{ fontFamily: "'Syne', sans-serif", fontWeight: 700, fontSize: 15, color: T.text }}>Goaradio</span>
+            </div>
+          </div>
+
+          {/* Pages */}
+          {currentPage === 'overview'  && <PageOverview />}
+          {currentPage === 'analytics' && <PageAnalytics />}
+          {currentPage === 'earnings'  && <PageEarnings />}
+          {currentPage === 'tracks'    && <PageTracks />}
+          {currentPage === 'upload'    && <PageUpload />}
+          {currentPage === 'profile'   && <PageProfile />}
+        </main>
+      </div>
+
+      {/* ── DELETE CONFIRM ── */}
+      {deleteTarget && (
+        <div
+          onClick={e => { if (e.target === e.currentTarget) setDeleteTarget(null) }}
+          style={{
+            position: 'fixed', inset: 0, background: 'rgba(0,0,0,0.8)',
+            backdropFilter: 'blur(6px)', zIndex: 200,
+            display: 'flex', alignItems: 'center', justifyContent: 'center', padding: 20,
+          }}
+        >
+          <div style={{
+            background: T.card, border: `1px solid ${T.border2}`,
+            borderRadius: 20, padding: 32, width: '100%', maxWidth: 360,
+            textAlign: 'center', animation: 'slideIn 0.2s ease',
+          }}>
+            <div style={{ width: 56, height: 56, borderRadius: '50%', background: 'rgba(239,68,68,0.08)', border: '1px solid rgba(239,68,68,0.2)', display: 'flex', alignItems: 'center', justifyContent: 'center', margin: '0 auto 16px' }}>
+              <Trash2 size={22} color={T.danger} />
+            </div>
+            <h3 style={{ fontFamily: "'Syne', sans-serif", fontSize: 17, color: T.text, margin: '0 0 8px' }}>Remove this track?</h3>
+            <p style={{ fontSize: 13, color: T.muted, lineHeight: 1.6, marginBottom: 24 }}>This will delete the track from Airtable and remove it from Goaradio immediately.</p>
+            <div style={{ display: 'flex', gap: 10 }}>
+              <button onClick={() => setDeleteTarget(null)} style={{ ...btnGhost, flex: 1, justifyContent: 'center' }}>Cancel</button>
+              <button
+                onClick={confirmDelete}
+                disabled={deleteLoading}
+                style={{ ...btnGold, flex: 1, justifyContent: 'center', background: T.danger, color: '#fff' }}
+              >
+                {deleteLoading ? <Loader2 size={14} style={{ animation: 'spin 0.8s linear infinite' }} /> : <Trash2 size={14} />}
+                Delete
+              </button>
+            </div>
+          </div>
+        </div>
+      )}
+
+      {/* ── TOAST ── */}
+      <div style={{
+        position: 'fixed', bottom: 24, right: 24, zIndex: 300,
+        background: T.card2,
+        border: `1px solid ${toast.type === 'success' ? 'rgba(34,197,94,0.25)' : 'rgba(239,68,68,0.25)'}`,
+        borderRadius: 12, padding: '13px 18px',
+        display: 'flex', alignItems: 'center', gap: 10,
+        fontSize: 14, fontWeight: 500, color: T.text,
+        transform: toast.visible ? 'translateY(0)' : 'translateY(16px)',
+        opacity: toast.visible ? 1 : 0,
+        transition: 'all 0.3s ease',
+        pointerEvents: 'none',
+        maxWidth: 320,
+      }}>
+        {toast.type === 'success'
+          ? <Check size={15} color={T.success} />
+          : <AlertCircle size={15} color={T.danger} />
+        }
+        {toast.msg}
+      </div>
+
+      {/* ── RESPONSIVE STYLES ── */}
+      <style>{`
+        @media (max-width: 900px) {
+          .goa-sidebar { width: 200px !important; }
+          .goa-main { margin-left: 200px !important; padding: 24px 20px !important; }
+        }
+        @media (max-width: 700px) {
+          .goa-sidebar { display: none !important; }
+          .goa-main { margin-left: 0 !important; padding: 16px !important; }
+          .goa-mobile-bar { display: flex !important; }
+        }
+      `}</style>
+    </>
+  )
+}
