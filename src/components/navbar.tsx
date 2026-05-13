@@ -12,7 +12,7 @@ import {
   signOut,
   updateProfile,
 } from 'firebase/auth'
-import { doc, setDoc } from 'firebase/firestore'
+import { doc, setDoc, collection, getDocs } from 'firebase/firestore'
 import { auth, db } from '@/lib/firebase'
 import bewave from '../../public/goaradio logo round (1).png'
 import {
@@ -114,6 +114,9 @@ export function Navbar() {
   const [selectedArtist, setSelectedArtist]   = useState<AirtableArtist | null>(null)
   const [isSmall, setIsSmall]                 = useState(false)
 
+  // ── Set of Airtable IDs that are already pending/claimed ──────────────────
+  const [claimedAirtableIds, setClaimedAirtableIds] = useState<Set<string>>(new Set())
+
   // ── Claim details state ────────────────────────────────────────────────
   const [claimFullName, setClaimFullName]     = useState('')
   const [claimStageName, setClaimStageName]   = useState('')
@@ -141,6 +144,37 @@ export function Navbar() {
     return () => window.removeEventListener('resize', check)
   }, [])
 
+  // ── Load all pending/claimed Airtable IDs from Firestore ─────────────────
+  // This runs once when the claim-pick step is reached.
+  // It reads every doc in the `artists` collection and collects airtableIds
+  // where verified === false AND airtableId is non-empty (i.e. pending claims).
+  // Artists whose claim was rejected will have their doc deleted by an admin,
+  // so they'll naturally reappear here.
+  useEffect(() => {
+    if (step !== 'claim-pick') return
+
+    async function loadClaimedIds() {
+      try {
+        const snapshot = await getDocs(collection(db, 'artists'))
+        const ids = new Set<string>()
+        snapshot.forEach((docSnap) => {
+          const data = docSnap.data()
+          // A profile is "locked" if it has an airtableId and is pending or verified
+          if (data.airtableId && data.airtableId !== '') {
+            ids.add(data.airtableId as string)
+          }
+        })
+        setClaimedAirtableIds(ids)
+      } catch {
+        // Non-fatal — if this fails we just show all artists
+        console.warn('Could not load claimed artist IDs from Firestore.')
+      }
+    }
+
+    loadClaimedIds()
+  }, [step])
+
+  // ── Fetch Airtable artists once, then filter out already-claimed ones ─────
   useEffect(() => {
     if (step !== 'claim-pick' || allArtists.length > 0) return
     setArtistsLoading(true)
@@ -163,12 +197,14 @@ export function Navbar() {
       .finally(() => setArtistsLoading(false))
   }, [step, allArtists.length])
 
+  // ── Filter by search query AND exclude already-claimed profiles ───────────
   useEffect(() => {
     const q = searchQuery.toLowerCase()
+    const available = allArtists.filter((a) => !claimedAirtableIds.has(a.id))
     setFilteredArtists(
-      q ? allArtists.filter((a) => a.name.toLowerCase().includes(q)) : allArtists,
+      q ? available.filter((a) => a.name.toLowerCase().includes(q)) : available,
     )
-  }, [searchQuery, allArtists])
+  }, [searchQuery, allArtists, claimedAirtableIds])
 
   // Pre-fill stage name from selected artist
   useEffect(() => {
@@ -247,7 +283,7 @@ export function Navbar() {
     setStep('claim-details')
   }
 
-  // ── Claim: details → verify (creates account) ─────────────────────────
+  // ── Claim: details → verify (creates account + locks profile) ────────────
   async function handleClaimDetailsSubmit(e: React.FormEvent) {
     e.preventDefault()
     if (!claimFullName.trim()) { setError('Full name is required.'); return }
@@ -261,7 +297,8 @@ export function Navbar() {
       // Set display name
       await updateProfile(cred.user, { displayName: claimStageName || claimFullName })
 
-      // Write initial Firestore doc
+      // Write initial Firestore doc — including airtableId locks this profile
+      // for all other users browsing the claim-pick list.
       await setDoc(doc(db, 'artists', cred.user.uid), {
         artistName:  claimStageName || claimFullName,
         fullName:    claimFullName,
@@ -274,6 +311,12 @@ export function Navbar() {
         verified:    false,
         claimedAt:   new Date().toISOString(),
       })
+
+      // Immediately reflect the lock in local state so the UI is consistent
+      // if the user navigates back for any reason.
+      if (selectedArtist?.id) {
+        setClaimedAirtableIds((prev) => new Set([...prev, selectedArtist.id]))
+      }
 
       setIsLoggedIn(true)
       setStep('claim-verify')
@@ -304,6 +347,7 @@ export function Navbar() {
           email:      user.email,
           verified:   false,
           createdAt:  new Date().toISOString(),
+          // No airtableId here — so this doc won't lock any profile
         },
         { merge: true },
       )
@@ -437,7 +481,11 @@ export function Navbar() {
               Loading artists...
             </div>
           ) : filteredArtists.length === 0 ? (
-            <div style={{ textAlign: 'center', padding: '24px 0', color: T.muted, fontSize: 13 }}>No artists found</div>
+            <div style={{ textAlign: 'center', padding: '24px 0', color: T.muted, fontSize: 13 }}>
+              {allArtists.length > 0 && searchQuery === ''
+                ? 'All artist profiles have been claimed.'
+                : 'No artists found'}
+            </div>
           ) : (
             filteredArtists.map((artist) => {
               const isSelected = selectedArtist?.id === artist.id
