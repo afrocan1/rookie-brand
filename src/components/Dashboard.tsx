@@ -125,7 +125,6 @@ const T = {
   danger:  '#ef4444',
 }
 
-// ─── Toast ────────────────────────────────────────────────────────────────────
 interface ToastState { msg: string; type: 'success' | 'error'; visible: boolean }
 
 // ─── Main Component ───────────────────────────────────────────────────────────
@@ -144,12 +143,12 @@ export default function Dashboard() {
   const [deleteLoading, setDeleteLoading] = useState(false)
 
   // Upload state
-  const [uploadTitle, setUploadTitle]     = useState('')
-  const [uploadAudio, setUploadAudio]     = useState('')
-  const [uploadCover, setUploadCover]     = useState('')
+  const [uploadTitle, setUploadTitle]       = useState('')
+  const [uploadAudio, setUploadAudio]       = useState('')
+  const [uploadCover, setUploadCover]       = useState('')
   const [uploadDuration, setUploadDuration] = useState('')
-  const [uploadGenre, setUploadGenre]     = useState('')
-  const [uploading, setUploading]         = useState(false)
+  const [uploadGenre, setUploadGenre]       = useState('')
+  const [uploading, setUploading]           = useState(false)
   const [uploadProgress, setUploadProgress] = useState(0)
   const [audioPreviewUrl, setAudioPreviewUrl] = useState('')
   const [coverPreviewUrl, setCoverPreviewUrl] = useState('')
@@ -230,43 +229,75 @@ export default function Dashboard() {
     }
   }, [router])
 
+  // ── Load tracks whenever artistName is resolved ──────────────────────────
   useEffect(() => {
     if (!artistName) return
     loadTracks(artistName)
   // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [artistName])
 
+  // ─── THE KEY FIX: fetch stream counts from Firestore, not Airtable fields ──
+  // The HTML version uses doc(db, 'streams', trackTitle) → {count: N}
+  // We replicate that exactly here so stats are accurate.
   async function loadTracks(name: string) {
     setTracksLoading(true)
     try {
       const res  = await atFetch('Tracks', `Artist="${name}"`)
       const data = await res.json()
+
       // eslint-disable-next-line @typescript-eslint/no-explicit-any
-      const list: Track[] = (data.records || []).map((r: any) => ({
-        id:       r.id,
-        title:    r.fields.Title    || 'Untitled',
-        artist:   r.fields.Artist   || name,
-        cover:    r.fields.Cover_url || '',
-        audio:    r.fields.Audio_url || '',
-        duration: r.fields.Duration  || '--:--',
-        genre:    r.fields.Genre     || '',
-        streams:  r.fields.Streams   || 0,
-      }))
+      const rawRecords: any[] = data.records || []
+
+      // Fetch each track's stream count from Firestore in parallel
+      const list: Track[] = await Promise.all(
+        rawRecords.map(async (r) => {
+          const f = r.fields
+          const title = f.Title || 'Untitled'
+
+          // Mirror the HTML logic: doc(db, 'streams', trackTitle)
+          let streams = 0
+          try {
+            const streamDoc = await getDoc(doc(db, 'streams', title))
+            if (streamDoc.exists()) {
+              streams = (streamDoc.data().count as number) || 0
+            }
+          } catch {
+            // If the stream doc doesn't exist yet, default to 0
+            streams = 0
+          }
+
+          return {
+            id:       r.id,
+            title,
+            artist:   f.Artist   || name,
+            cover:    f.Cover_url || '',
+            audio:    f.Audio_url || '',
+            duration: f.Duration  || '--:--',
+            genre:    f.Genre     || '',
+            streams,
+          }
+        })
+      )
+
+      // Sort highest streams first (same as HTML)
       list.sort((a, b) => b.streams - a.streams)
       setTracks(list)
-    } catch {
+    } catch (err) {
+      console.error('[Dashboard] loadTracks error:', err)
       showToast('Could not load tracks.', 'error')
     }
     setTracksLoading(false)
   }
 
-  const totalStreams   = tracks.reduce((s, t) => s + t.streams, 0)
-  const totalGoa       = Math.floor(totalStreams / 10)
-  const monthlyGoA     = Math.floor(totalGoa * 0.3)
-  const zltEarned      = Math.floor(totalGoa * 0.15)
-  const listeners      = Math.floor(totalStreams * 0.6)
-  const verified       = profileData.verified || false
+  // ── Derived stats — computed from actual Firestore stream counts ──────────
+  const totalStreams = tracks.reduce((s, t) => s + t.streams, 0)
+  const totalGoa     = Math.floor(totalStreams / 10)
+  const monthlyGoa   = Math.floor(totalGoa * 0.3)
+  const zltEarned    = Math.floor(totalGoa * 0.15)
+  const listeners    = Math.floor(totalStreams * 0.6)
+  const verified     = profileData.verified || false
 
+  // ── Upload ───────────────────────────────────────────────────────────────
   async function handleUpload() {
     if (!uploadTitle.trim() || !uploadAudio.trim()) {
       showToast('Title and Audio URL are required.', 'error')
@@ -277,28 +308,37 @@ export default function Dashboard() {
     const iv = setInterval(() => setUploadProgress(p => Math.min(p + 10, 80)), 120)
     try {
       const fields: Record<string, unknown> = {
-        Title: uploadTitle.trim(),
-        Artist: artistName,
+        Title:     uploadTitle.trim(),
+        Artist:    artistName,
         Audio_url: uploadAudio.trim(),
-        Duration: uploadDuration.trim(),
+        Duration:  uploadDuration.trim(),
       }
       if (uploadCover.trim()) fields.Cover_url = uploadCover.trim()
       if (uploadGenre)        fields.Genre     = uploadGenre
+
       const res  = await atCreate('Tracks', fields)
       const data = await res.json()
       clearInterval(iv)
       setUploadProgress(100)
+
       if (data.id) {
         const newTrack: Track = {
-          id: data.id, title: uploadTitle, artist: artistName,
-          cover: uploadCover || '', audio: uploadAudio,
-          duration: uploadDuration, genre: uploadGenre, streams: 0,
+          id:       data.id,
+          title:    uploadTitle,
+          artist:   artistName,
+          cover:    uploadCover || '',
+          audio:    uploadAudio,
+          duration: uploadDuration,
+          genre:    uploadGenre,
+          streams:  0,
         }
         setTracks(prev => [newTrack, ...prev])
       }
+
       showToast('Track published to Goaradio!')
       setUploadTitle(''); setUploadAudio(''); setUploadCover('')
-      setUploadDuration(''); setUploadGenre(''); setAudioPreviewUrl(''); setCoverPreviewUrl('')
+      setUploadDuration(''); setUploadGenre('')
+      setAudioPreviewUrl(''); setCoverPreviewUrl('')
     } catch {
       clearInterval(iv)
       showToast('Publish failed. Check console.', 'error')
@@ -307,6 +347,7 @@ export default function Dashboard() {
     setTimeout(() => setUploadProgress(0), 1000)
   }
 
+  // ── Delete ───────────────────────────────────────────────────────────────
   async function confirmDelete() {
     if (!deleteTarget) return
     setDeleteLoading(true)
@@ -321,6 +362,7 @@ export default function Dashboard() {
     setDeleteLoading(false)
   }
 
+  // ── Save profile ─────────────────────────────────────────────────────────
   async function saveProfile() {
     setSavingProfile(true)
     const user = auth.currentUser
@@ -333,8 +375,8 @@ export default function Dashboard() {
       twitter:     profTwitter,
       spotify:     profSpotify,
       youtube:     profYoutube,
-      profilePic:  profPicUrl || profileData.profilePic || '',
-      coverArt:    profCoverUrl || profileData.coverArt || '',
+      profilePic:  profPicUrl  || profileData.profilePic || '',
+      coverArt:    profCoverUrl || profileData.coverArt  || '',
     }
     try {
       await setDoc(doc(db, 'artists', user.uid), data, { merge: true })
@@ -344,9 +386,9 @@ export default function Dashboard() {
       }
       if (profileData.airtableId) {
         const atF: Record<string, unknown> = {}
-        if (data.coverArt)   atF.Cover_url    = data.coverArt
-        if (data.profilePic) atF.Profile_pic  = data.profilePic
-        if (data.bio)        atF.Bio          = data.bio
+        if (data.coverArt)   atF.Cover_url   = data.coverArt
+        if (data.profilePic) atF.Profile_pic = data.profilePic
+        if (data.bio)        atF.Bio         = data.bio
         if (Object.keys(atF).length) await atPatch('Artists', profileData.airtableId, atF)
       }
       showToast('Profile saved!')
@@ -361,15 +403,18 @@ export default function Dashboard() {
     router.replace('/')
   }
 
+  // ── Chart data (simulated daily distribution based on real total) ────────
   const days      = ['Mon', 'Tue', 'Wed', 'Thu', 'Fri', 'Sat', 'Sun']
   const maxStream = Math.max(totalStreams * 0.25, 10)
+  // Use a stable seed so chart doesn't re-randomise on every render
   const chartVals = days.map((_, i) =>
-    Math.floor(Math.random() * maxStream * (i >= 5 ? 1.4 : 1))
+    Math.floor((((i * 7 + 3) % 10) / 10) * maxStream * (i >= 5 ? 1.4 : 1))
   )
 
-  const hour   = new Date().getHours()
-  const greet  = hour < 12 ? 'Good morning' : hour < 18 ? 'Good afternoon' : 'Good evening'
+  const hour  = new Date().getHours()
+  const greet = hour < 12 ? 'Good morning' : hour < 18 ? 'Good afternoon' : 'Good evening'
 
+  // ── Loading screen ───────────────────────────────────────────────────────
   if (authLoading) {
     return (
       <div style={{
@@ -388,110 +433,108 @@ export default function Dashboard() {
     )
   }
 
+  // ── Shared styles ────────────────────────────────────────────────────────
   const card: React.CSSProperties = {
-    background: T.card,
-    border: `1px solid ${T.border}`,
+    background:   T.card,
+    border:       `1px solid ${T.border}`,
     borderRadius: 16,
-    padding: '24px 26px',
+    padding:      '24px 26px',
   }
 
   const inputStyle: React.CSSProperties = {
-    width: '100%',
-    background: T.bg2,
-    border: `1px solid ${T.border2}`,
+    width:        '100%',
+    background:   T.bg2,
+    border:       `1px solid ${T.border2}`,
     borderRadius: 10,
-    padding: '11px 13px',
-    color: T.text,
-    fontFamily: "'DM Sans', sans-serif",
-    fontSize: 14,
-    outline: 'none',
-    boxSizing: 'border-box',
+    padding:      '11px 13px',
+    color:        T.text,
+    fontFamily:   "'DM Sans', sans-serif",
+    fontSize:     14,
+    outline:      'none',
+    boxSizing:    'border-box',
   }
 
   const btnGold: React.CSSProperties = {
-    background: T.accent,
-    color: '#080808',
-    border: 'none',
+    background:   T.accent,
+    color:        '#080808',
+    border:       'none',
     borderRadius: 10,
-    padding: '10px 18px',
-    fontFamily: "'Syne', sans-serif",
-    fontSize: 13,
-    fontWeight: 700,
-    cursor: 'pointer',
-    display: 'inline-flex',
-    alignItems: 'center',
-    gap: 7,
-    whiteSpace: 'nowrap' as const,
-    transition: 'opacity 0.2s',
+    padding:      '10px 18px',
+    fontFamily:   "'Syne', sans-serif",
+    fontSize:     13,
+    fontWeight:   700,
+    cursor:       'pointer',
+    display:      'inline-flex',
+    alignItems:   'center',
+    gap:          7,
+    whiteSpace:   'nowrap' as const,
+    transition:   'opacity 0.2s',
   }
 
   const btnGhost: React.CSSProperties = {
-    background: 'transparent',
-    color: T.text,
-    border: `1px solid ${T.border2}`,
+    background:   'transparent',
+    color:        T.text,
+    border:       `1px solid ${T.border2}`,
     borderRadius: 10,
-    padding: '10px 16px',
-    fontFamily: "'DM Sans', sans-serif",
-    fontSize: 13,
-    fontWeight: 500,
-    cursor: 'pointer',
-    display: 'inline-flex',
-    alignItems: 'center',
-    gap: 7,
-    whiteSpace: 'nowrap' as const,
-    transition: 'background 0.2s',
+    padding:      '10px 16px',
+    fontFamily:   "'DM Sans', sans-serif",
+    fontSize:     13,
+    fontWeight:   500,
+    cursor:       'pointer',
+    display:      'inline-flex',
+    alignItems:   'center',
+    gap:          7,
+    whiteSpace:   'nowrap' as const,
+    transition:   'background 0.2s',
   }
 
   const navItems: { id: Page; label: string; icon: React.ReactNode; section?: string }[] = [
-    { id: 'overview',  label: 'Dashboard',  icon: <LayoutDashboard size={16} />, section: 'OVERVIEW' },
-    { id: 'analytics', label: 'Analytics',  icon: <BarChart3 size={16} /> },
-    { id: 'earnings',  label: 'Earnings',   icon: <Coins size={16} /> },
-    { id: 'tracks',    label: 'My Tracks',  icon: <Music2 size={16} />, section: 'MY MUSIC' },
-    { id: 'upload',    label: 'Upload',     icon: <Upload size={16} /> },
-    { id: 'profile',   label: 'Edit Profile', icon: <UserCircle size={16} />, section: 'PROFILE' },
+    { id: 'overview',  label: 'Dashboard',   icon: <LayoutDashboard size={16} />, section: 'OVERVIEW' },
+    { id: 'analytics', label: 'Analytics',   icon: <BarChart3 size={16} /> },
+    { id: 'earnings',  label: 'Earnings',    icon: <Coins size={16} /> },
+    { id: 'tracks',    label: 'My Tracks',   icon: <Music2 size={16} />, section: 'MY MUSIC' },
+    { id: 'upload',    label: 'Upload',      icon: <Upload size={16} /> },
+    { id: 'profile',   label: 'Edit Profile',icon: <UserCircle size={16} />, section: 'PROFILE' },
   ]
 
+  // ── Nav item component ───────────────────────────────────────────────────
   function NavItem({ item }: { item: typeof navItems[0] }) {
     const active = currentPage === item.id
     return (
       <button
         onClick={() => { setCurrentPage(item.id); setSidebarOpen(false) }}
         style={{
-          width: '100%',
-          position: 'relative',
-          display: 'flex',
-          alignItems: 'center',
-          gap: 10,
-          padding: '9px 12px',
+          width:        '100%',
+          position:     'relative',
+          display:      'flex',
+          alignItems:   'center',
+          gap:          10,
+          padding:      '9px 12px',
           borderRadius: 10,
-          border: `1px solid ${active ? 'rgba(51,51,51,0.7)' : 'transparent'}`,
-          background: active ? 'rgba(0,0,0,0.5)' : 'transparent',
-          boxShadow: active ? 'inset 0 1px 0 rgba(255,255,255,0.04), 0 -1px 0 1px rgba(51,51,51,0.25)' : 'none',
-          color: active ? T.text : T.muted,
-          fontSize: 13,
-          fontWeight: active ? 600 : 400,
-          fontFamily: "'DM Sans', sans-serif",
-          cursor: 'pointer',
-          textAlign: 'left',
-          transition: 'all 0.18s',
+          border:       `1px solid ${active ? 'rgba(51,51,51,0.7)' : 'transparent'}`,
+          background:   active ? 'rgba(0,0,0,0.5)' : 'transparent',
+          boxShadow:    active ? 'inset 0 1px 0 rgba(255,255,255,0.04), 0 -1px 0 1px rgba(51,51,51,0.25)' : 'none',
+          color:        active ? T.text : T.muted,
+          fontSize:     13,
+          fontWeight:   active ? 600 : 400,
+          fontFamily:   "'DM Sans', sans-serif",
+          cursor:       'pointer',
+          textAlign:    'left',
+          transition:   'all 0.18s',
         }}
-        onMouseEnter={e => {
-          if (!active) (e.currentTarget as HTMLElement).style.background = 'rgba(255,255,255,0.03)'
-        }}
-        onMouseLeave={e => {
-          if (!active) (e.currentTarget as HTMLElement).style.background = 'transparent'
-        }}
+        onMouseEnter={e => { if (!active) (e.currentTarget as HTMLElement).style.background = 'rgba(255,255,255,0.03)' }}
+        onMouseLeave={e => { if (!active) (e.currentTarget as HTMLElement).style.background = 'transparent' }}
       >
         {active && (
           <span style={{
-            position: 'absolute',
-            left: 0,
-            top: '50%',
-            transform: 'translateY(-50%)',
-            width: 3,
-            height: 18,
+            position:     'absolute',
+            left:         0,
+            top:          '50%',
+            transform:    'translateY(-50%)',
+            width:        3,
+            height:       18,
             borderRadius: '0 3px 3px 0',
-            background: T.accent,
+            background:   T.accent,
           }} />
         )}
         <span style={{ color: active ? T.accent : 'inherit', display: 'flex', alignItems: 'center' }}>
@@ -502,9 +545,10 @@ export default function Dashboard() {
     )
   }
 
-  const picSrc    = profileData.profilePic || `https://ui-avatars.com/api/?name=${encodeURIComponent(artistName)}&background=1a1800&color=ffd700&size=200`
-  const coverSrc  = profileData.coverArt || ''
+  const picSrc   = profileData.profilePic || `https://ui-avatars.com/api/?name=${encodeURIComponent(artistName)}&background=1a1800&color=ffd700&size=200`
+  const coverSrc = profileData.coverArt   || ''
 
+  // ── Sidebar ──────────────────────────────────────────────────────────────
   function SidebarContent() {
     return (
       <div style={{ display: 'flex', flexDirection: 'column', height: '100%' }}>
@@ -549,14 +593,14 @@ export default function Dashboard() {
         </div>
 
         <div style={{
-          marginTop: 'auto',
-          padding: '12px',
-          background: T.bg3,
-          border: `1px solid ${T.border}`,
+          marginTop:    'auto',
+          padding:      '12px',
+          background:   T.bg3,
+          border:       `1px solid ${T.border}`,
           borderRadius: 12,
-          display: 'flex',
-          alignItems: 'center',
-          gap: 10,
+          display:      'flex',
+          alignItems:   'center',
+          gap:          10,
         }}>
           <img
             src={picSrc}
@@ -579,37 +623,38 @@ export default function Dashboard() {
     )
   }
 
+  // ── Stat card ────────────────────────────────────────────────────────────
   function StatCard({ label, value, sub, icon, accent }: {
     label: string; value: string | number; sub: string; icon: React.ReactNode; accent: string
   }) {
     return (
       <div style={{
-        background: T.card,
-        border: `1px solid ${T.border}`,
+        background:   T.card,
+        border:       `1px solid ${T.border}`,
         borderRadius: 14,
-        padding: '20px 22px',
-        position: 'relative',
-        overflow: 'hidden',
+        padding:      '20px 22px',
+        position:     'relative',
+        overflow:     'hidden',
       }}>
         <div style={{ position: 'absolute', top: 0, left: 0, right: 0, height: 2, background: accent }} />
         <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'flex-start', marginBottom: 12 }}>
           <span style={{ fontSize: 11, color: T.muted, textTransform: 'uppercase', letterSpacing: '0.06em', fontFamily: "'DM Sans', sans-serif", fontWeight: 600 }}>{label}</span>
           <span style={{ color: T.muted, opacity: 0.6 }}>{icon}</span>
         </div>
-        <div style={{ fontFamily: "'Syne', sans-serif", fontSize: 28, fontWeight: 800, color: T.text, lineHeight: 1, marginBottom: 6 }}>{value}</div>
+        <div style={{ fontFamily: "'Syne', sans-serif", fontSize: 28, fontWeight: 800, color: T.text, lineHeight: 1, marginBottom: 6 }}>
+          {tracksLoading ? <span style={{ fontSize: 18, color: T.muted2 }}>—</span> : value}
+        </div>
         <div style={{ fontSize: 12, color: T.muted, display: 'flex', alignItems: 'center', gap: 4 }}>{sub}</div>
       </div>
     )
   }
 
+  // ── Track row ────────────────────────────────────────────────────────────
   function TrackRow({ track, index, showActions = true }: { track: Track; index: number; showActions?: boolean }) {
     const fallback = `https://ui-avatars.com/api/?name=${encodeURIComponent(track.title)}&background=1a1800&color=ffd700&size=100`
     return (
-      <div style={{
-        display: 'flex', alignItems: 'center', gap: 14,
-        padding: '10px 12px', borderRadius: 10, margin: '0 -12px',
-        transition: 'background 0.15s',
-      }}
+      <div
+        style={{ display: 'flex', alignItems: 'center', gap: 14, padding: '10px 12px', borderRadius: 10, margin: '0 -12px', transition: 'background 0.15s' }}
         onMouseEnter={e => (e.currentTarget.style.background = T.bg3)}
         onMouseLeave={e => (e.currentTarget.style.background = 'transparent')}
       >
@@ -639,11 +684,7 @@ export default function Dashboard() {
                   showToast('Track updated!')
                 }).catch(() => showToast('Update failed.', 'error'))
               }}
-              style={{
-                width: 30, height: 30, borderRadius: 7, border: `1px solid ${T.border}`,
-                background: 'transparent', color: T.muted, cursor: 'pointer', display: 'flex',
-                alignItems: 'center', justifyContent: 'center', transition: 'all 0.15s',
-              }}
+              style={{ width: 30, height: 30, borderRadius: 7, border: `1px solid ${T.border}`, background: 'transparent', color: T.muted, cursor: 'pointer', display: 'flex', alignItems: 'center', justifyContent: 'center', transition: 'all 0.15s' }}
               onMouseEnter={e => { (e.currentTarget.style.background = T.bg3); (e.currentTarget.style.color = T.text) }}
               onMouseLeave={e => { (e.currentTarget.style.background = 'transparent'); (e.currentTarget.style.color = T.muted) }}
             >
@@ -652,11 +693,7 @@ export default function Dashboard() {
             <button
               title="Delete"
               onClick={() => setDeleteTarget(track.id)}
-              style={{
-                width: 30, height: 30, borderRadius: 7, border: `1px solid ${T.border}`,
-                background: 'transparent', color: T.muted, cursor: 'pointer', display: 'flex',
-                alignItems: 'center', justifyContent: 'center', transition: 'all 0.15s',
-              }}
+              style={{ width: 30, height: 30, borderRadius: 7, border: `1px solid ${T.border}`, background: 'transparent', color: T.muted, cursor: 'pointer', display: 'flex', alignItems: 'center', justifyContent: 'center', transition: 'all 0.15s' }}
               onMouseEnter={e => { (e.currentTarget.style.background = 'rgba(239,68,68,0.1)'); (e.currentTarget.style.color = T.danger) }}
               onMouseLeave={e => { (e.currentTarget.style.background = 'transparent'); (e.currentTarget.style.color = T.muted) }}
             >
@@ -668,6 +705,7 @@ export default function Dashboard() {
     )
   }
 
+  // ── Pages ────────────────────────────────────────────────────────────────
   function PageOverview() {
     return (
       <div>
@@ -681,8 +719,8 @@ export default function Dashboard() {
               display: 'inline-flex', alignItems: 'center', gap: 5,
               padding: '5px 12px', borderRadius: 20, fontSize: 12, fontWeight: 600,
               background: verified ? 'rgba(34,197,94,0.08)' : 'rgba(255,215,0,0.08)',
-              color: verified ? T.success : T.accent,
-              border: `1px solid ${verified ? 'rgba(34,197,94,0.2)' : 'rgba(255,215,0,0.2)'}`,
+              color:      verified ? T.success : T.accent,
+              border:     `1px solid ${verified ? 'rgba(34,197,94,0.2)' : 'rgba(255,215,0,0.2)'}`,
             }}>
               {verified ? <BadgeCheck size={12} /> : <Clock size={12} />}
               {verified ? 'Verified' : 'Pending Verification'}
@@ -693,11 +731,36 @@ export default function Dashboard() {
           </div>
         </div>
 
+        {/* ── Stat cards — values come from Firestore stream counts ── */}
         <div style={{ display: 'grid', gridTemplateColumns: 'repeat(auto-fit, minmax(180px, 1fr))', gap: 14, marginBottom: 24 }}>
-          <StatCard label="Total Streams" value={totalStreams.toLocaleString()} sub="all time" icon={<TrendingUp size={16} />} accent={`linear-gradient(90deg, ${T.accent}, ${T.accent2})`} />
-          <StatCard label="Tracks" value={tracks.length} sub="on Goaradio" icon={<Music2 size={16} />} accent="linear-gradient(90deg, #a855f7, #7c3aed)" />
-          <StatCard label="$GOA Earned" value={totalGoa.toLocaleString()} sub="stream rewards" icon={<Coins size={16} />} accent={`linear-gradient(90deg, ${T.accent}, #f59e0b)`} />
-          <StatCard label="Monthly Listeners" value={listeners.toLocaleString()} sub="unique users" icon={<Users size={16} />} accent="linear-gradient(90deg, #22c55e, #16a34a)" />
+          <StatCard
+            label="Total Streams"
+            value={totalStreams.toLocaleString()}
+            sub="all time"
+            icon={<TrendingUp size={16} />}
+            accent={`linear-gradient(90deg, ${T.accent}, ${T.accent2})`}
+          />
+          <StatCard
+            label="Tracks"
+            value={tracks.length}
+            sub="on Goaradio"
+            icon={<Music2 size={16} />}
+            accent="linear-gradient(90deg, #a855f7, #7c3aed)"
+          />
+          <StatCard
+            label="$GOA Earned"
+            value={totalGoa.toLocaleString()}
+            sub="stream rewards"
+            icon={<Coins size={16} />}
+            accent={`linear-gradient(90deg, ${T.accent}, #f59e0b)`}
+          />
+          <StatCard
+            label="Monthly Listeners"
+            value={listeners.toLocaleString()}
+            sub="unique users"
+            icon={<Users size={16} />}
+            accent="linear-gradient(90deg, #22c55e, #16a34a)"
+          />
         </div>
 
         <div style={{ ...card, marginBottom: 20 }}>
@@ -731,9 +794,9 @@ export default function Dashboard() {
           <h2 style={{ fontFamily: "'Syne', sans-serif", fontSize: 16, fontWeight: 700, color: T.text, margin: '0 0 16px' }}>Quick Actions</h2>
           <div style={{ display: 'grid', gridTemplateColumns: 'repeat(auto-fit, minmax(160px, 1fr))', gap: 12 }}>
             {[
-              { icon: <Upload size={20} style={{ color: T.accent }} />, title: 'Upload Track', sub: 'Add songs to Goaradio', page: 'upload' as Page },
-              { icon: <UserCircle size={20} style={{ color: '#a855f7' }} />, title: 'Update Profile', sub: 'Edit your artist page', page: 'profile' as Page },
-              { icon: <BarChart3 size={20} style={{ color: T.success }} />, title: 'View Analytics', sub: 'Check stream data', page: 'analytics' as Page },
+              { icon: <Upload size={20} style={{ color: T.accent }} />,  title: 'Upload Track',   sub: 'Add songs to Goaradio',  page: 'upload'    as Page },
+              { icon: <UserCircle size={20} style={{ color: '#a855f7' }} />, title: 'Update Profile', sub: 'Edit your artist page',  page: 'profile'   as Page },
+              { icon: <BarChart3 size={20} style={{ color: T.success }} />, title: 'View Analytics', sub: 'Check stream data',      page: 'analytics' as Page },
             ].map(item => (
               <button
                 key={item.title}
@@ -764,14 +827,14 @@ export default function Dashboard() {
 
         <div style={{ ...card, marginBottom: 20 }}>
           <h2 style={{ fontFamily: "'Syne', sans-serif", fontSize: 16, fontWeight: 700, color: T.text, margin: '0 0 20px' }}>Streams — Last 7 Days</h2>
-          <div style={{ display: 'flex', alignItems: 'flex-end', gap: 8, height: 160, paddingBottom: 24, position: 'relative' }}>
+          <div style={{ display: 'flex', alignItems: 'flex-end', gap: 8, height: 160, paddingBottom: 24 }}>
             {chartVals.map((v, i) => (
               <div key={i} style={{ display: 'flex', flexDirection: 'column', alignItems: 'center', gap: 4, flex: 1 }}>
                 <div style={{
-                  width: '100%', borderRadius: '5px 5px 0 0',
-                  height: `${Math.max((v / maxBar) * 100, 4)}%`,
-                  background: `linear-gradient(180deg, ${T.accent}, rgba(255,215,0,0.2))`,
-                  cursor: 'default',
+                  width:        '100%',
+                  borderRadius: '5px 5px 0 0',
+                  height:       `${Math.max((v / maxBar) * 100, 4)}%`,
+                  background:   `linear-gradient(180deg, ${T.accent}, rgba(255,215,0,0.2))`,
                 }} title={`${v} streams`} />
                 <span style={{ fontSize: 11, color: T.muted2 }}>{days[i]}</span>
               </div>
@@ -807,11 +870,11 @@ export default function Dashboard() {
           <div style={card}>
             <h2 style={{ fontFamily: "'Syne', sans-serif", fontSize: 16, fontWeight: 700, color: T.text, margin: '0 0 18px' }}>Audience Insight</h2>
             {[
-              ['Top Country', '🇬🇭 Ghana'],
+              ['Top Country',         '🇬🇭 Ghana'],
               ['Avg. Stream Duration', '2m 14s'],
-              ['Repeat Listeners', '61%'],
-              ['Mobile vs Desktop', '78% / 22%'],
-              ['Peak Hour', '8 PM – 10 PM'],
+              ['Repeat Listeners',     '61%'],
+              ['Mobile vs Desktop',    '78% / 22%'],
+              ['Peak Hour',            '8 PM – 10 PM'],
             ].map(([label, val]) => (
               <div key={label} style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', fontSize: 14, marginBottom: 14 }}>
                 <span style={{ color: T.muted }}>{label}</span>
@@ -835,15 +898,17 @@ export default function Dashboard() {
         <div style={{ ...card, marginBottom: 20 }}>
           <div style={{ textAlign: 'center', padding: '12px 0 24px' }}>
             <div style={{ fontSize: 11, color: T.muted, textTransform: 'uppercase', letterSpacing: '0.06em', marginBottom: 10, fontFamily: "'DM Sans', sans-serif", fontWeight: 600 }}>Total Earned</div>
-            <div style={{ fontFamily: "'Syne', sans-serif", fontSize: 'clamp(42px, 10vw, 60px)', fontWeight: 800, lineHeight: 1, color: T.text }}>{totalGoa.toLocaleString()}</div>
+            <div style={{ fontFamily: "'Syne', sans-serif", fontSize: 'clamp(42px, 10vw, 60px)', fontWeight: 800, lineHeight: 1, color: T.text }}>
+              {tracksLoading ? '—' : totalGoa.toLocaleString()}
+            </div>
             <div style={{ fontSize: 16, color: T.accent, fontWeight: 700, marginTop: 6 }}>$GOA</div>
           </div>
           <div style={{ display: 'grid', gridTemplateColumns: 'repeat(auto-fit, minmax(140px, 1fr))', gap: 12 }}>
             {[
-              { label: 'This Month', value: monthlyGoA, token: '$GOA' },
-              { label: 'Last Month', value: '—', token: '$GOA' },
-              { label: '$ZLT Earned', value: zltEarned, token: '$ZLT' },
-              { label: 'Pending Payout', value: '—', token: 'Review in 30 days' },
+              { label: 'This Month',     value: tracksLoading ? '—' : monthlyGoa, token: '$GOA' },
+              { label: 'Last Month',     value: '—',                              token: '$GOA' },
+              { label: '$ZLT Earned',    value: tracksLoading ? '—' : zltEarned,  token: '$ZLT' },
+              { label: 'Pending Payout', value: '—',                              token: 'Review in 30 days' },
             ].map(item => (
               <div key={item.label} style={{ background: T.bg2, border: `1px solid ${T.border}`, borderRadius: 10, padding: '14px 16px' }}>
                 <div style={{ fontSize: 12, color: T.muted, marginBottom: 8 }}>{item.label}</div>
@@ -858,9 +923,9 @@ export default function Dashboard() {
           <h2 style={{ fontFamily: "'Syne', sans-serif", fontSize: 16, fontWeight: 700, color: T.text, margin: '0 0 18px' }}>How earnings work</h2>
           <div style={{ display: 'flex', flexDirection: 'column', gap: 16 }}>
             {[
-              ['Listeners stream your tracks', 'Every unique stream on Goaradio is logged in real-time.'],
-              ['$GOA tokens are allocated', 'Artists receive $GOA proportional to their total stream count each epoch.'],
-              ['Withdraw to your wallet', 'Claim your $GOA at the end of each 30-day epoch. Connect a wallet to begin.'],
+              ['Listeners stream your tracks',  'Every unique stream on Goaradio is logged in real-time.'],
+              ['$GOA tokens are allocated',      'Artists receive $GOA proportional to their total stream count each epoch.'],
+              ['Withdraw to your wallet',        'Claim your $GOA at the end of each 30-day epoch. Connect a wallet to begin.'],
             ].map(([title, sub], i) => (
               <div key={title} style={{ display: 'flex', gap: 14, alignItems: 'flex-start' }}>
                 <div style={{
@@ -983,7 +1048,10 @@ export default function Dashboard() {
                 </div>
               )}
               <p style={{ fontSize: 12, color: T.muted2 }}>
-                Host images on <a href="https://imgur.com" target="_blank" rel="noreferrer" style={{ color: T.accent, textDecoration: 'none' }}>Imgur</a> or <a href="https://cloudinary.com" target="_blank" rel="noreferrer" style={{ color: T.accent, textDecoration: 'none' }}>Cloudinary</a>.
+                Host images on{' '}
+                <a href="https://imgur.com" target="_blank" rel="noreferrer" style={{ color: T.accent, textDecoration: 'none' }}>Imgur</a>
+                {' '}or{' '}
+                <a href="https://cloudinary.com" target="_blank" rel="noreferrer" style={{ color: T.accent, textDecoration: 'none' }}>Cloudinary</a>.
               </p>
             </div>
           </div>
@@ -1009,7 +1077,7 @@ export default function Dashboard() {
   }
 
   function PageProfile() {
-    const displayPic   = profPicUrl || picSrc
+    const displayPic   = profPicUrl   || picSrc
     const displayCover = profCoverUrl || coverSrc
 
     return (
@@ -1042,22 +1110,20 @@ export default function Dashboard() {
           </div>
 
           <div style={{ display: 'flex', alignItems: 'flex-end', gap: 18, marginBottom: 22 }}>
-            <div style={{ position: 'relative', flexShrink: 0 }}>
-              <img
-                src={displayPic}
-                alt={artistName}
-                onError={e => { (e.target as HTMLImageElement).src = `https://ui-avatars.com/api/?name=${encodeURIComponent(artistName)}&background=1a1800&color=ffd700&size=200` }}
-                style={{ width: 90, height: 90, borderRadius: '50%', objectFit: 'cover', border: `3px solid ${T.bg}`, background: T.bg3 }}
-              />
-            </div>
+            <img
+              src={displayPic}
+              alt={artistName}
+              onError={e => { (e.target as HTMLImageElement).src = `https://ui-avatars.com/api/?name=${encodeURIComponent(artistName)}&background=1a1800&color=ffd700&size=200` }}
+              style={{ width: 90, height: 90, borderRadius: '50%', objectFit: 'cover', border: `3px solid ${T.bg}`, background: T.bg3, flexShrink: 0 }}
+            />
             <div>
               <div style={{ fontFamily: "'Syne', sans-serif", fontSize: 20, fontWeight: 700, color: T.text }}>{profArtistName || artistName}</div>
               <span style={{
                 display: 'inline-flex', alignItems: 'center', gap: 5, marginTop: 6,
                 padding: '3px 10px', borderRadius: 20, fontSize: 12, fontWeight: 600,
                 background: verified ? 'rgba(34,197,94,0.08)' : 'rgba(255,215,0,0.08)',
-                color: verified ? T.success : T.accent,
-                border: `1px solid ${verified ? 'rgba(34,197,94,0.2)' : 'rgba(255,215,0,0.2)'}`,
+                color:      verified ? T.success : T.accent,
+                border:     `1px solid ${verified ? 'rgba(34,197,94,0.2)' : 'rgba(255,215,0,0.2)'}`,
               }}>
                 {verified ? <BadgeCheck size={11} /> : <Clock size={11} />}
                 {verified ? 'Verified' : 'Pending Verification'}
@@ -1117,13 +1183,14 @@ export default function Dashboard() {
     )
   }
 
+  // ── Render ───────────────────────────────────────────────────────────────
   return (
     <>
       <style>{`
         @import url('https://fonts.googleapis.com/css2?family=Syne:wght@400;600;700;800&family=DM+Sans:wght@300;400;500;600&display=swap');
-        @keyframes spin { to { transform: rotate(360deg); } }
+        @keyframes spin     { to { transform: rotate(360deg); } }
         @keyframes pulseDot { 0%,100% { opacity:1; } 50% { opacity:0.3; } }
-        @keyframes slideIn { from { transform: translateY(12px); opacity: 0; } to { transform: translateY(0); opacity: 1; } }
+        @keyframes slideIn  { from { transform: translateY(12px); opacity:0; } to { transform:translateY(0); opacity:1; } }
         * { box-sizing: border-box; }
         body { background: ${T.bg} !important; }
         ::-webkit-scrollbar { width: 4px; }
@@ -1132,21 +1199,36 @@ export default function Dashboard() {
         input::placeholder, textarea::placeholder { color: ${T.muted2} !important; }
         input, textarea, select { color-scheme: dark; }
         option { background: #111 !important; }
+        @media (max-width: 900px) {
+          .goa-sidebar { width: 200px !important; }
+          .goa-main    { margin-left: 200px !important; padding: 24px 20px !important; }
+        }
+        @media (max-width: 700px) {
+          .goa-sidebar     { display: none !important; }
+          .goa-main        { margin-left: 0 !important; padding: 16px !important; }
+          .goa-mobile-bar  { display: flex !important; }
+        }
       `}</style>
 
       <div style={{ display: 'flex', minHeight: '100vh', background: T.bg, fontFamily: "'DM Sans', sans-serif" }}>
-        <aside style={{
+
+        {/* Desktop sidebar */}
+        <aside className="goa-sidebar" style={{
           position: 'fixed', left: 0, top: 0, bottom: 0,
           width: 224, background: T.bg2, borderRight: `1px solid ${T.border}`,
           padding: '24px 16px', zIndex: 50, overflowY: 'auto',
           display: 'flex', flexDirection: 'column',
-        }} className="goa-sidebar">
+        }}>
           <SidebarContent />
         </aside>
 
+        {/* Mobile sidebar overlay */}
         {sidebarOpen && (
           <>
-            <div onClick={() => setSidebarOpen(false)} style={{ position: 'fixed', inset: 0, background: 'rgba(0,0,0,0.7)', backdropFilter: 'blur(4px)', zIndex: 98 }} />
+            <div
+              onClick={() => setSidebarOpen(false)}
+              style={{ position: 'fixed', inset: 0, background: 'rgba(0,0,0,0.7)', backdropFilter: 'blur(4px)', zIndex: 98 }}
+            />
             <aside style={{
               position: 'fixed', left: 0, top: 0, bottom: 0,
               width: 224, background: T.bg2, borderRight: `1px solid ${T.border}`,
@@ -1162,8 +1244,11 @@ export default function Dashboard() {
           </>
         )}
 
-        <main style={{ flex: 1, marginLeft: 224, minHeight: '100vh', padding: '32px 32px', maxWidth: '100%' }} className="goa-main">
-          <div style={{ display: 'none', alignItems: 'center', gap: 12, marginBottom: 20, paddingBottom: 16, borderBottom: `1px solid ${T.border}` }} className="goa-mobile-bar">
+        {/* Main content */}
+        <main className="goa-main" style={{ flex: 1, marginLeft: 224, minHeight: '100vh', padding: '32px 32px', maxWidth: '100%' }}>
+
+          {/* Mobile top bar */}
+          <div className="goa-mobile-bar" style={{ display: 'none', alignItems: 'center', gap: 12, marginBottom: 20, paddingBottom: 16, borderBottom: `1px solid ${T.border}` }}>
             <button onClick={() => setSidebarOpen(true)} style={{ background: 'none', border: `1px solid ${T.border}`, borderRadius: 8, padding: '7px 9px', color: T.text, cursor: 'pointer', display: 'flex' }}>
               <Menu size={18} />
             </button>
@@ -1184,6 +1269,7 @@ export default function Dashboard() {
         </main>
       </div>
 
+      {/* Delete confirmation modal */}
       {deleteTarget && (
         <div
           onClick={e => { if (e.target === e.currentTarget) setDeleteTarget(null) }}
@@ -1206,34 +1292,31 @@ export default function Dashboard() {
         </div>
       )}
 
+      {/* Toast */}
       <div style={{
-        position: 'fixed', bottom: 24, right: 24, zIndex: 300,
+        position:   'fixed',
+        bottom:     24,
+        right:      24,
+        zIndex:     300,
         background: T.card2,
-        border: `1px solid ${toast.type === 'success' ? 'rgba(34,197,94,0.25)' : 'rgba(239,68,68,0.25)'}`,
-        borderRadius: 12, padding: '13px 18px',
-        display: 'flex', alignItems: 'center', gap: 10,
-        fontSize: 14, fontWeight: 500, color: T.text,
-        transform: toast.visible ? 'translateY(0)' : 'translateY(16px)',
-        opacity: toast.visible ? 1 : 0,
+        border:     `1px solid ${toast.type === 'success' ? 'rgba(34,197,94,0.25)' : 'rgba(239,68,68,0.25)'}`,
+        borderRadius: 12,
+        padding:    '13px 18px',
+        display:    'flex',
+        alignItems: 'center',
+        gap:        10,
+        fontSize:   14,
+        fontWeight: 500,
+        color:      T.text,
+        transform:  toast.visible ? 'translateY(0)' : 'translateY(16px)',
+        opacity:    toast.visible ? 1 : 0,
         transition: 'all 0.3s ease',
         pointerEvents: 'none',
-        maxWidth: 320,
+        maxWidth:   320,
       }}>
         {toast.type === 'success' ? <Check size={15} color={T.success} /> : <AlertCircle size={15} color={T.danger} />}
         {toast.msg}
       </div>
-
-      <style>{`
-        @media (max-width: 900px) {
-          .goa-sidebar { width: 200px !important; }
-          .goa-main { margin-left: 200px !important; padding: 24px 20px !important; }
-        }
-        @media (max-width: 700px) {
-          .goa-sidebar { display: none !important; }
-          .goa-main { margin-left: 0 !important; padding: 16px !important; }
-          .goa-mobile-bar { display: flex !important; }
-        }
-      `}</style>
     </>
   )
 }
