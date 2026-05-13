@@ -2,6 +2,8 @@
 
 import { useState, useEffect, useCallback } from 'react'
 import { useRouter } from 'next/navigation'
+import Image from 'next/image'
+import goaradioLogo from '../../public/goaradio logo round (1).png'
 import {
   onAuthStateChanged,
   signOut,
@@ -37,7 +39,6 @@ import {
   Mic2,
   Menu,
   X,
-  Radio,
   Loader2,
   AlertCircle,
 } from 'lucide-react'
@@ -545,12 +546,15 @@ export default function Dashboard() {
     return (
       <div style={{ display: 'flex', flexDirection: 'column', height: '100%' }}>
         <div style={{ display: 'flex', alignItems: 'center', gap: 10, padding: '0 4px', marginBottom: 28 }}>
-          <div style={{
-            width: 34, height: 34, borderRadius: 9,
-            background: `linear-gradient(135deg, ${T.accent}, ${T.accent2})`,
-            display: 'flex', alignItems: 'center', justifyContent: 'center',
-          }}>
-            <Radio size={16} color="#080808" />
+          <div style={{ width: 36, height: 36, position: 'relative', flexShrink: 0 }}>
+            <Image
+              src={goaradioLogo}
+              alt="Goaradio logo"
+              fill
+              priority
+              quality={100}
+              style={{ objectFit: 'contain' }}
+            />
           </div>
           <div>
             <div style={{ fontFamily: "'Poppins', sans-serif", fontWeight: 800, fontSize: 15, color: T.text, lineHeight: 1.1 }}>Goaradio</div>
@@ -1244,8 +1248,15 @@ export default function Dashboard() {
               <Menu size={18} />
             </button>
             <div style={{ display: 'flex', alignItems: 'center', gap: 8 }}>
-              <div style={{ width: 26, height: 26, borderRadius: 6, background: `linear-gradient(135deg, ${T.accent}, ${T.accent2})`, display: 'flex', alignItems: 'center', justifyContent: 'center' }}>
-                <Radio size={13} color="#080808" />
+              <div style={{ width: 28, height: 28, position: 'relative', flexShrink: 0 }}>
+                <Image
+                  src={goaradioLogo}
+                  alt="Goaradio logo"
+                  fill
+                  priority
+                  quality={100}
+                  style={{ objectFit: 'contain' }}
+                />
               </div>
               <span style={{ fontFamily: "'Poppins', sans-serif", fontWeight: 700, fontSize: 15, color: T.text }}>Goaradio</span>
             </div>
