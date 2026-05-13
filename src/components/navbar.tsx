@@ -682,7 +682,7 @@ export function Navbar() {
               <span style={{ fontSize: 11, color: '#ef4444', marginTop: 3, display: 'block' }}>Passwords don&apos;t match</span>
             )}
             {claimConfirm && claimConfirm === claimPassword && (
-              <span style={{ fontSize: 11, color: T.success, marginTop: 3, display: 'block', display: 'flex', alignItems: 'center', gap: 4 } as React.CSSProperties}>
+              <span style={{ fontSize: 11, color: T.success, marginTop: 3, display: 'flex', alignItems: 'center', gap: 4 }}>
                 <Check size={11} /> Passwords match
               </span>
             )}
