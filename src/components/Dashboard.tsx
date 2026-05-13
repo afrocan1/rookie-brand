@@ -236,9 +236,6 @@ export default function Dashboard() {
   // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [artistName])
 
-  // ─── THE KEY FIX: fetch stream counts from Firestore, not Airtable fields ──
-  // The HTML version uses doc(db, 'streams', trackTitle) → {count: N}
-  // We replicate that exactly here so stats are accurate.
   async function loadTracks(name: string) {
     setTracksLoading(true)
     try {
@@ -248,13 +245,11 @@ export default function Dashboard() {
       // eslint-disable-next-line @typescript-eslint/no-explicit-any
       const rawRecords: any[] = data.records || []
 
-      // Fetch each track's stream count from Firestore in parallel
       const list: Track[] = await Promise.all(
         rawRecords.map(async (r) => {
           const f = r.fields
           const title = f.Title || 'Untitled'
 
-          // Mirror the HTML logic: doc(db, 'streams', trackTitle)
           let streams = 0
           try {
             const streamDoc = await getDoc(doc(db, 'streams', title))
@@ -262,7 +257,6 @@ export default function Dashboard() {
               streams = (streamDoc.data().count as number) || 0
             }
           } catch {
-            // If the stream doc doesn't exist yet, default to 0
             streams = 0
           }
 
@@ -279,7 +273,6 @@ export default function Dashboard() {
         })
       )
 
-      // Sort highest streams first (same as HTML)
       list.sort((a, b) => b.streams - a.streams)
       setTracks(list)
     } catch (err) {
@@ -289,7 +282,7 @@ export default function Dashboard() {
     setTracksLoading(false)
   }
 
-  // ── Derived stats — computed from actual Firestore stream counts ──────────
+  // ── Derived stats ────────────────────────────────────────────────────────
   const totalStreams = tracks.reduce((s, t) => s + t.streams, 0)
   const totalGoa     = Math.floor(totalStreams / 10)
   const monthlyGoa   = Math.floor(totalGoa * 0.3)
@@ -403,10 +396,9 @@ export default function Dashboard() {
     router.replace('/')
   }
 
-  // ── Chart data (simulated daily distribution based on real total) ────────
+  // ── Chart data ───────────────────────────────────────────────────────────
   const days      = ['Mon', 'Tue', 'Wed', 'Thu', 'Fri', 'Sat', 'Sun']
   const maxStream = Math.max(totalStreams * 0.25, 10)
-  // Use a stable seed so chart doesn't re-randomise on every render
   const chartVals = days.map((_, i) =>
     Math.floor((((i * 7 + 3) % 10) / 10) * maxStream * (i >= 5 ? 1.4 : 1))
   )
@@ -460,7 +452,7 @@ export default function Dashboard() {
     border:       'none',
     borderRadius: 10,
     padding:      '10px 18px',
-    fontFamily:   "'Syne', sans-serif",
+    fontFamily:   "'Poppins', sans-serif",
     fontSize:     13,
     fontWeight:   700,
     cursor:       'pointer',
@@ -489,12 +481,12 @@ export default function Dashboard() {
   }
 
   const navItems: { id: Page; label: string; icon: React.ReactNode; section?: string }[] = [
-    { id: 'overview',  label: 'Dashboard',   icon: <LayoutDashboard size={16} />, section: 'OVERVIEW' },
-    { id: 'analytics', label: 'Analytics',   icon: <BarChart3 size={16} /> },
-    { id: 'earnings',  label: 'Earnings',    icon: <Coins size={16} /> },
-    { id: 'tracks',    label: 'My Tracks',   icon: <Music2 size={16} />, section: 'MY MUSIC' },
-    { id: 'upload',    label: 'Upload',      icon: <Upload size={16} /> },
-    { id: 'profile',   label: 'Edit Profile',icon: <UserCircle size={16} />, section: 'PROFILE' },
+    { id: 'overview',  label: 'Dashboard',    icon: <LayoutDashboard size={16} />, section: 'OVERVIEW' },
+    { id: 'analytics', label: 'Analytics',    icon: <BarChart3 size={16} /> },
+    { id: 'earnings',  label: 'Earnings',     icon: <Coins size={16} /> },
+    { id: 'tracks',    label: 'My Tracks',    icon: <Music2 size={16} />, section: 'MY MUSIC' },
+    { id: 'upload',    label: 'Upload',       icon: <Upload size={16} /> },
+    { id: 'profile',   label: 'Edit Profile', icon: <UserCircle size={16} />, section: 'PROFILE' },
   ]
 
   // ── Nav item component ───────────────────────────────────────────────────
@@ -561,7 +553,7 @@ export default function Dashboard() {
             <Radio size={16} color="#080808" />
           </div>
           <div>
-            <div style={{ fontFamily: "'Syne', sans-serif", fontWeight: 800, fontSize: 15, color: T.text, lineHeight: 1.1 }}>Goaradio</div>
+            <div style={{ fontFamily: "'Poppins', sans-serif", fontWeight: 800, fontSize: 15, color: T.text, lineHeight: 1.1 }}>Goaradio</div>
             <div style={{ fontSize: 10, color: T.accent, fontFamily: "'DM Sans', sans-serif", letterSpacing: '0.04em', textTransform: 'uppercase' }}>for artists</div>
           </div>
         </div>
@@ -641,7 +633,7 @@ export default function Dashboard() {
           <span style={{ fontSize: 11, color: T.muted, textTransform: 'uppercase', letterSpacing: '0.06em', fontFamily: "'DM Sans', sans-serif", fontWeight: 600 }}>{label}</span>
           <span style={{ color: T.muted, opacity: 0.6 }}>{icon}</span>
         </div>
-        <div style={{ fontFamily: "'Syne', sans-serif", fontSize: 28, fontWeight: 800, color: T.text, lineHeight: 1, marginBottom: 6 }}>
+        <div style={{ fontFamily: "'Poppins', sans-serif", fontSize: 28, fontWeight: 800, color: T.text, lineHeight: 1, marginBottom: 6 }}>
           {tracksLoading ? <span style={{ fontSize: 18, color: T.muted2 }}>—</span> : value}
         </div>
         <div style={{ fontSize: 12, color: T.muted, display: 'flex', alignItems: 'center', gap: 4 }}>{sub}</div>
@@ -711,7 +703,7 @@ export default function Dashboard() {
       <div>
         <div style={{ display: 'flex', alignItems: 'flex-start', justifyContent: 'space-between', marginBottom: 28, gap: 12, flexWrap: 'wrap' }}>
           <div>
-            <h1 style={{ fontFamily: "'Syne', sans-serif", fontSize: 'clamp(22px, 4vw, 28px)', fontWeight: 800, color: T.text, margin: 0 }}>Dashboard</h1>
+            <h1 style={{ fontFamily: "'Poppins', sans-serif", fontSize: 'clamp(22px, 4vw, 28px)', fontWeight: 800, color: T.text, margin: 0 }}>Dashboard</h1>
             <p style={{ fontSize: 14, color: T.muted, marginTop: 4 }}>{greet}, {artistName}</p>
           </div>
           <div style={{ display: 'flex', alignItems: 'center', gap: 10, flexWrap: 'wrap' }}>
@@ -731,7 +723,6 @@ export default function Dashboard() {
           </div>
         </div>
 
-        {/* ── Stat cards — values come from Firestore stream counts ── */}
         <div style={{ display: 'grid', gridTemplateColumns: 'repeat(auto-fit, minmax(180px, 1fr))', gap: 14, marginBottom: 24 }}>
           <StatCard
             label="Total Streams"
@@ -765,7 +756,7 @@ export default function Dashboard() {
 
         <div style={{ ...card, marginBottom: 20 }}>
           <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between', marginBottom: 18 }}>
-            <h2 style={{ fontFamily: "'Syne', sans-serif", fontSize: 16, fontWeight: 700, color: T.text, margin: 0 }}>Top Tracks</h2>
+            <h2 style={{ fontFamily: "'Poppins', sans-serif", fontSize: 16, fontWeight: 700, color: T.text, margin: 0 }}>Top Tracks</h2>
             <span style={{ display: 'flex', alignItems: 'center', gap: 5, fontSize: 12, color: T.success, fontWeight: 600 }}>
               <span style={{ width: 6, height: 6, borderRadius: '50%', background: T.success, display: 'inline-block', animation: 'pulseDot 2s infinite' }} />
               Live
@@ -791,12 +782,12 @@ export default function Dashboard() {
         </div>
 
         <div style={card}>
-          <h2 style={{ fontFamily: "'Syne', sans-serif", fontSize: 16, fontWeight: 700, color: T.text, margin: '0 0 16px' }}>Quick Actions</h2>
+          <h2 style={{ fontFamily: "'Poppins', sans-serif", fontSize: 16, fontWeight: 700, color: T.text, margin: '0 0 16px' }}>Quick Actions</h2>
           <div style={{ display: 'grid', gridTemplateColumns: 'repeat(auto-fit, minmax(160px, 1fr))', gap: 12 }}>
             {[
-              { icon: <Upload size={20} style={{ color: T.accent }} />,  title: 'Upload Track',   sub: 'Add songs to Goaradio',  page: 'upload'    as Page },
-              { icon: <UserCircle size={20} style={{ color: '#a855f7' }} />, title: 'Update Profile', sub: 'Edit your artist page',  page: 'profile'   as Page },
-              { icon: <BarChart3 size={20} style={{ color: T.success }} />, title: 'View Analytics', sub: 'Check stream data',      page: 'analytics' as Page },
+              { icon: <Upload size={20} style={{ color: T.accent }} />,       title: 'Upload Track',    sub: 'Add songs to Goaradio', page: 'upload'    as Page },
+              { icon: <UserCircle size={20} style={{ color: '#a855f7' }} />,  title: 'Update Profile',  sub: 'Edit your artist page', page: 'profile'   as Page },
+              { icon: <BarChart3 size={20} style={{ color: T.success }} />,   title: 'View Analytics',  sub: 'Check stream data',     page: 'analytics' as Page },
             ].map(item => (
               <button
                 key={item.title}
@@ -821,12 +812,12 @@ export default function Dashboard() {
     return (
       <div>
         <div style={{ marginBottom: 28 }}>
-          <h1 style={{ fontFamily: "'Syne', sans-serif", fontSize: 'clamp(22px, 4vw, 28px)', fontWeight: 800, color: T.text, margin: 0 }}>Analytics</h1>
+          <h1 style={{ fontFamily: "'Poppins', sans-serif", fontSize: 'clamp(22px, 4vw, 28px)', fontWeight: 800, color: T.text, margin: 0 }}>Analytics</h1>
           <p style={{ fontSize: 14, color: T.muted, marginTop: 4 }}>Stream data for your music</p>
         </div>
 
         <div style={{ ...card, marginBottom: 20 }}>
-          <h2 style={{ fontFamily: "'Syne', sans-serif", fontSize: 16, fontWeight: 700, color: T.text, margin: '0 0 20px' }}>Streams — Last 7 Days</h2>
+          <h2 style={{ fontFamily: "'Poppins', sans-serif", fontSize: 16, fontWeight: 700, color: T.text, margin: '0 0 20px' }}>Streams — Last 7 Days</h2>
           <div style={{ display: 'flex', alignItems: 'flex-end', gap: 8, height: 160, paddingBottom: 24 }}>
             {chartVals.map((v, i) => (
               <div key={i} style={{ display: 'flex', flexDirection: 'column', alignItems: 'center', gap: 4, flex: 1 }}>
@@ -844,7 +835,7 @@ export default function Dashboard() {
 
         <div style={{ display: 'grid', gridTemplateColumns: 'repeat(auto-fit, minmax(280px, 1fr))', gap: 16 }}>
           <div style={card}>
-            <h2 style={{ fontFamily: "'Syne', sans-serif", fontSize: 16, fontWeight: 700, color: T.text, margin: '0 0 18px' }}>Streams by Track</h2>
+            <h2 style={{ fontFamily: "'Poppins', sans-serif", fontSize: 16, fontWeight: 700, color: T.text, margin: '0 0 18px' }}>Streams by Track</h2>
             {tracksLoading ? (
               <div style={{ color: T.muted, fontSize: 14 }}>Loading...</div>
             ) : tracks.length === 0 ? (
@@ -868,9 +859,9 @@ export default function Dashboard() {
           </div>
 
           <div style={card}>
-            <h2 style={{ fontFamily: "'Syne', sans-serif", fontSize: 16, fontWeight: 700, color: T.text, margin: '0 0 18px' }}>Audience Insight</h2>
+            <h2 style={{ fontFamily: "'Poppins', sans-serif", fontSize: 16, fontWeight: 700, color: T.text, margin: '0 0 18px' }}>Audience Insight</h2>
             {[
-              ['Top Country',         '🇬🇭 Ghana'],
+              ['Top Country',          '🇬🇭 Ghana'],
               ['Avg. Stream Duration', '2m 14s'],
               ['Repeat Listeners',     '61%'],
               ['Mobile vs Desktop',    '78% / 22%'],
@@ -891,14 +882,14 @@ export default function Dashboard() {
     return (
       <div>
         <div style={{ marginBottom: 28 }}>
-          <h1 style={{ fontFamily: "'Syne', sans-serif", fontSize: 'clamp(22px, 4vw, 28px)', fontWeight: 800, color: T.text, margin: 0 }}>Earnings</h1>
+          <h1 style={{ fontFamily: "'Poppins', sans-serif", fontSize: 'clamp(22px, 4vw, 28px)', fontWeight: 800, color: T.text, margin: 0 }}>Earnings</h1>
           <p style={{ fontSize: 14, color: T.muted, marginTop: 4 }}>Your Stream-to-Earn rewards</p>
         </div>
 
         <div style={{ ...card, marginBottom: 20 }}>
           <div style={{ textAlign: 'center', padding: '12px 0 24px' }}>
             <div style={{ fontSize: 11, color: T.muted, textTransform: 'uppercase', letterSpacing: '0.06em', marginBottom: 10, fontFamily: "'DM Sans', sans-serif", fontWeight: 600 }}>Total Earned</div>
-            <div style={{ fontFamily: "'Syne', sans-serif", fontSize: 'clamp(42px, 10vw, 60px)', fontWeight: 800, lineHeight: 1, color: T.text }}>
+            <div style={{ fontFamily: "'Poppins', sans-serif", fontSize: 'clamp(42px, 10vw, 60px)', fontWeight: 800, lineHeight: 1, color: T.text }}>
               {tracksLoading ? '—' : totalGoa.toLocaleString()}
             </div>
             <div style={{ fontSize: 16, color: T.accent, fontWeight: 700, marginTop: 6 }}>$GOA</div>
@@ -912,7 +903,7 @@ export default function Dashboard() {
             ].map(item => (
               <div key={item.label} style={{ background: T.bg2, border: `1px solid ${T.border}`, borderRadius: 10, padding: '14px 16px' }}>
                 <div style={{ fontSize: 12, color: T.muted, marginBottom: 8 }}>{item.label}</div>
-                <div style={{ fontFamily: "'Syne', sans-serif", fontSize: 20, fontWeight: 700, color: T.text }}>{item.value}</div>
+                <div style={{ fontFamily: "'Poppins', sans-serif", fontSize: 20, fontWeight: 700, color: T.text }}>{item.value}</div>
                 <div style={{ fontSize: 11, color: T.muted2, marginTop: 2 }}>{item.token}</div>
               </div>
             ))}
@@ -920,19 +911,19 @@ export default function Dashboard() {
         </div>
 
         <div style={card}>
-          <h2 style={{ fontFamily: "'Syne', sans-serif", fontSize: 16, fontWeight: 700, color: T.text, margin: '0 0 18px' }}>How earnings work</h2>
+          <h2 style={{ fontFamily: "'Poppins', sans-serif", fontSize: 16, fontWeight: 700, color: T.text, margin: '0 0 18px' }}>How earnings work</h2>
           <div style={{ display: 'flex', flexDirection: 'column', gap: 16 }}>
             {[
-              ['Listeners stream your tracks',  'Every unique stream on Goaradio is logged in real-time.'],
-              ['$GOA tokens are allocated',      'Artists receive $GOA proportional to their total stream count each epoch.'],
-              ['Withdraw to your wallet',        'Claim your $GOA at the end of each 30-day epoch. Connect a wallet to begin.'],
+              ['Listeners stream your tracks', 'Every unique stream on Goaradio is logged in real-time.'],
+              ['$GOA tokens are allocated',     'Artists receive $GOA proportional to their total stream count each epoch.'],
+              ['Withdraw to your wallet',       'Claim your $GOA at the end of each 30-day epoch. Connect a wallet to begin.'],
             ].map(([title, sub], i) => (
               <div key={title} style={{ display: 'flex', gap: 14, alignItems: 'flex-start' }}>
                 <div style={{
                   width: 28, height: 28, borderRadius: 8, flexShrink: 0,
                   background: 'rgba(255,215,0,0.08)', border: `1px solid rgba(255,215,0,0.15)`,
                   display: 'flex', alignItems: 'center', justifyContent: 'center',
-                  fontSize: 12, fontWeight: 700, color: T.accent, fontFamily: "'Syne', sans-serif",
+                  fontSize: 12, fontWeight: 700, color: T.accent, fontFamily: "'Poppins', sans-serif",
                 }}>
                   {i + 1}
                 </div>
@@ -953,7 +944,7 @@ export default function Dashboard() {
       <div>
         <div style={{ display: 'flex', alignItems: 'flex-start', justifyContent: 'space-between', marginBottom: 28, gap: 12, flexWrap: 'wrap' }}>
           <div>
-            <h1 style={{ fontFamily: "'Syne', sans-serif", fontSize: 'clamp(22px, 4vw, 28px)', fontWeight: 800, color: T.text, margin: 0 }}>My Tracks</h1>
+            <h1 style={{ fontFamily: "'Poppins', sans-serif", fontSize: 'clamp(22px, 4vw, 28px)', fontWeight: 800, color: T.text, margin: 0 }}>My Tracks</h1>
             <p style={{ fontSize: 14, color: T.muted, marginTop: 4 }}>Manage your music on Goaradio</p>
           </div>
           <button onClick={() => setCurrentPage('upload')} style={btnGold}>
@@ -968,7 +959,7 @@ export default function Dashboard() {
           ) : tracks.length === 0 ? (
             <div style={{ textAlign: 'center', padding: '48px 24px' }}>
               <Music2 size={40} style={{ color: T.muted2, marginBottom: 14 }} />
-              <h3 style={{ fontFamily: "'Syne', sans-serif", fontSize: 17, color: T.text, margin: '0 0 8px' }}>No tracks yet</h3>
+              <h3 style={{ fontFamily: "'Poppins', sans-serif", fontSize: 17, color: T.text, margin: '0 0 8px' }}>No tracks yet</h3>
               <p style={{ fontSize: 14, color: T.muted, marginBottom: 20 }}>Upload your first track to get started on Goaradio.</p>
               <button onClick={() => setCurrentPage('upload')} style={btnGold}>
                 <Upload size={14} /> Upload First Track
@@ -986,13 +977,13 @@ export default function Dashboard() {
     return (
       <div>
         <div style={{ marginBottom: 28 }}>
-          <h1 style={{ fontFamily: "'Syne', sans-serif", fontSize: 'clamp(22px, 4vw, 28px)', fontWeight: 800, color: T.text, margin: 0 }}>Upload Track</h1>
+          <h1 style={{ fontFamily: "'Poppins', sans-serif", fontSize: 'clamp(22px, 4vw, 28px)', fontWeight: 800, color: T.text, margin: 0 }}>Upload Track</h1>
           <p style={{ fontSize: 14, color: T.muted, marginTop: 4 }}>Add a new song to your Goaradio profile</p>
         </div>
 
         <div style={{ display: 'grid', gridTemplateColumns: 'repeat(auto-fit, minmax(280px, 1fr))', gap: 16, marginBottom: 16 }}>
           <div style={card}>
-            <h2 style={{ fontFamily: "'Syne', sans-serif", fontSize: 15, fontWeight: 700, color: T.text, margin: '0 0 18px' }}>Track Details</h2>
+            <h2 style={{ fontFamily: "'Poppins', sans-serif", fontSize: 15, fontWeight: 700, color: T.text, margin: '0 0 18px' }}>Track Details</h2>
             <div style={{ display: 'flex', flexDirection: 'column', gap: 14 }}>
               <div>
                 <label style={{ fontSize: 12, color: T.muted, display: 'block', marginBottom: 6, fontWeight: 500 }}>Track Title *</label>
@@ -1027,7 +1018,7 @@ export default function Dashboard() {
           </div>
 
           <div style={card}>
-            <h2 style={{ fontFamily: "'Syne', sans-serif", fontSize: 15, fontWeight: 700, color: T.text, margin: '0 0 18px' }}>Cover Art</h2>
+            <h2 style={{ fontFamily: "'Poppins', sans-serif", fontSize: 15, fontWeight: 700, color: T.text, margin: '0 0 18px' }}>Cover Art</h2>
             <div style={{ display: 'flex', flexDirection: 'column', gap: 14 }}>
               <div>
                 <label style={{ fontSize: 12, color: T.muted, display: 'block', marginBottom: 6, fontWeight: 500 }}>Cover Image URL</label>
@@ -1084,7 +1075,7 @@ export default function Dashboard() {
       <div>
         <div style={{ display: 'flex', alignItems: 'flex-start', justifyContent: 'space-between', marginBottom: 28, gap: 12, flexWrap: 'wrap' }}>
           <div>
-            <h1 style={{ fontFamily: "'Syne', sans-serif", fontSize: 'clamp(22px, 4vw, 28px)', fontWeight: 800, color: T.text, margin: 0 }}>Edit Profile</h1>
+            <h1 style={{ fontFamily: "'Poppins', sans-serif", fontSize: 'clamp(22px, 4vw, 28px)', fontWeight: 800, color: T.text, margin: 0 }}>Edit Profile</h1>
             <p style={{ fontSize: 14, color: T.muted, marginTop: 4 }}>Changes sync to your Goaradio artist page</p>
           </div>
           <button onClick={saveProfile} disabled={savingProfile} style={{ ...btnGold, opacity: savingProfile ? 0.7 : 1 }}>
@@ -1117,7 +1108,7 @@ export default function Dashboard() {
               style={{ width: 90, height: 90, borderRadius: '50%', objectFit: 'cover', border: `3px solid ${T.bg}`, background: T.bg3, flexShrink: 0 }}
             />
             <div>
-              <div style={{ fontFamily: "'Syne', sans-serif", fontSize: 20, fontWeight: 700, color: T.text }}>{profArtistName || artistName}</div>
+              <div style={{ fontFamily: "'Poppins', sans-serif", fontSize: 20, fontWeight: 700, color: T.text }}>{profArtistName || artistName}</div>
               <span style={{
                 display: 'inline-flex', alignItems: 'center', gap: 5, marginTop: 6,
                 padding: '3px 10px', borderRadius: 20, fontSize: 12, fontWeight: 600,
@@ -1187,7 +1178,7 @@ export default function Dashboard() {
   return (
     <>
       <style>{`
-        @import url('https://fonts.googleapis.com/css2?family=Syne:wght@400;600;700;800&family=DM+Sans:wght@300;400;500;600&display=swap');
+        @import url('https://fonts.googleapis.com/css2?family=Poppins:wght@400;600;700;800&family=DM+Sans:wght@300;400;500;600&display=swap');
         @keyframes spin     { to { transform: rotate(360deg); } }
         @keyframes pulseDot { 0%,100% { opacity:1; } 50% { opacity:0.3; } }
         @keyframes slideIn  { from { transform: translateY(12px); opacity:0; } to { transform:translateY(0); opacity:1; } }
@@ -1256,7 +1247,7 @@ export default function Dashboard() {
               <div style={{ width: 26, height: 26, borderRadius: 6, background: `linear-gradient(135deg, ${T.accent}, ${T.accent2})`, display: 'flex', alignItems: 'center', justifyContent: 'center' }}>
                 <Radio size={13} color="#080808" />
               </div>
-              <span style={{ fontFamily: "'Syne', sans-serif", fontWeight: 700, fontSize: 15, color: T.text }}>Goaradio</span>
+              <span style={{ fontFamily: "'Poppins', sans-serif", fontWeight: 700, fontSize: 15, color: T.text }}>Goaradio</span>
             </div>
           </div>
 
@@ -1279,7 +1270,7 @@ export default function Dashboard() {
             <div style={{ width: 56, height: 56, borderRadius: '50%', background: 'rgba(239,68,68,0.08)', border: '1px solid rgba(239,68,68,0.2)', display: 'flex', alignItems: 'center', justifyContent: 'center', margin: '0 auto 16px' }}>
               <Trash2 size={22} color={T.danger} />
             </div>
-            <h3 style={{ fontFamily: "'Syne', sans-serif", fontSize: 17, color: T.text, margin: '0 0 8px' }}>Remove this track?</h3>
+            <h3 style={{ fontFamily: "'Poppins', sans-serif", fontSize: 17, color: T.text, margin: '0 0 8px' }}>Remove this track?</h3>
             <p style={{ fontSize: 13, color: T.muted, lineHeight: 1.6, marginBottom: 24 }}>This will delete the track from Airtable and remove it from Goaradio immediately.</p>
             <div style={{ display: 'flex', gap: 10 }}>
               <button onClick={() => setDeleteTarget(null)} style={{ ...btnGhost, flex: 1, justifyContent: 'center' }}>Cancel</button>
