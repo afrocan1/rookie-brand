@@ -774,7 +774,7 @@ export default function Dashboard() {
           </div>
         </div>
 
-        <div style={{ display: 'grid', gridTemplateColumns: 'repeat(auto-fit, minmax(175px, 1fr))', gap: 14, marginBottom: 24 }}>
+        <div style={{ display: 'grid', gridTemplateColumns: 'repeat(2, 1fr)', gap: 12, marginBottom: 24 }}>
           <StatCard label="Total Plays" value={totalReplays.toLocaleString()} sub="all time" icon={<Headphones size={16} />} accent={`linear-gradient(90deg, ${T.accent}, ${T.accent2})`} />
           <StatCard label="Unique Listeners" value={totalStreams.toLocaleString()} sub="distinct users" icon={<Users size={16} />} accent="linear-gradient(90deg, #3b82f6, #1d4ed8)" />
           <StatCard label="Tracks" value={tracks.length} sub="on Goaradio" icon={<Music2 size={16} />} accent="linear-gradient(90deg, #a855f7, #7c3aed)" />
