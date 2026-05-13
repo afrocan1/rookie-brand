@@ -315,7 +315,7 @@ export function Navbar() {
       // Immediately reflect the lock in local state so the UI is consistent
       // if the user navigates back for any reason.
       if (selectedArtist?.id) {
-        setClaimedAirtableIds((prev) => new Set([...prev, selectedArtist.id]))
+        setClaimedAirtableIds((prev) => new Set([...Array.from(prev), selectedArtist.id]))
       }
 
       setIsLoggedIn(true)
