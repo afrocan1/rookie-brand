@@ -1,16 +1,15 @@
 /* eslint-disable camelcase */
 /* eslint-disable react-refresh/only-export-components */
 import './global.css'
-
 import type { Metadata } from 'next'
 import {
   Nunito_Sans,
   Wix_Madefor_Display,
   Wix_Madefor_Text,
 } from 'next/font/google'
-
 import { Navbar } from '../components/navbar'
 import { Footer } from '../components/footer'
+import { NavbarVisibilityWrapper } from '../components/NavbarVisibilityWrapper'
 
 export const metadata: Metadata = {
   title: 'Goaradio for Artists',
@@ -40,13 +39,11 @@ export const metadata: Metadata = {
   creator: 'Goaradio',
   publisher: 'Goaradio',
   applicationName: 'Goaradio for Artists',
-
   icons: {
     icon: '/goaradio logo round (1).png',
     apple: '/goaradio logo round (1).png',
     shortcut: '/goaradio logo round (1).png',
   },
-
   openGraph: {
     title: 'Goaradio for Artists',
     description:
@@ -62,7 +59,6 @@ export const metadata: Metadata = {
       },
     ],
   },
-
   twitter: {
     card: 'summary_large_image',
     title: 'Goaradio for Artists',
@@ -77,13 +73,11 @@ const nunitoSans = Nunito_Sans({
   weight: '400',
   variable: '--font-nunito-sans',
 })
-
 const madeforDisplay = Wix_Madefor_Display({
   subsets: ['latin'],
   weight: ['400', '500', '600', '700', '800'],
   variable: '--font-madefor-display',
 })
-
 const madeforText = Wix_Madefor_Text({
   subsets: ['latin'],
   weight: ['400', '500', '600', '700', '800'],
@@ -100,11 +94,15 @@ export default function RootLayout({
         id="root"
         className={`${madeforText.className} ${madeforDisplay.variable} ${nunitoSans.variable} bg-black text-marfin min-h-screen flex flex-col justify-between px-5`}
       >
-        <Navbar />
+        <NavbarVisibilityWrapper>
+          <Navbar />
+        </NavbarVisibilityWrapper>
 
         {children}
 
-        <Footer />
+        <NavbarVisibilityWrapper>
+          <Footer />
+        </NavbarVisibilityWrapper>
       </body>
     </html>
   )
