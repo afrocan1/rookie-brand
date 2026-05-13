@@ -12,6 +12,8 @@ import {
   doc,
   getDoc,
   setDoc,
+  collection,
+  getDocs,
 } from 'firebase/firestore'
 import { auth, db } from '@/lib/firebase'
 import {
@@ -41,6 +43,7 @@ import {
   X,
   Loader2,
   AlertCircle,
+  RefreshCw,
 } from 'lucide-react'
 
 // ─── Airtable ─────────────────────────────────────────────────────────────────
@@ -106,6 +109,9 @@ interface ProfileData {
   country?: string
 }
 
+// Daily stream counts keyed by 'YYYY-MM-DD'
+type DailyStreamMap = Record<string, number>
+
 type Page = 'overview' | 'analytics' | 'earnings' | 'tracks' | 'upload' | 'profile'
 
 // ─── Theme ────────────────────────────────────────────────────────────────────
@@ -128,6 +134,24 @@ const T = {
 
 interface ToastState { msg: string; type: 'success' | 'error'; visible: boolean }
 
+// ─── Helpers ──────────────────────────────────────────────────────────────────
+
+/** Returns last N days as 'YYYY-MM-DD' strings, oldest first */
+function lastNDays(n: number): string[] {
+  const days: string[] = []
+  for (let i = n - 1; i >= 0; i--) {
+    const d = new Date()
+    d.setDate(d.getDate() - i)
+    days.push(d.toISOString().slice(0, 10))
+  }
+  return days
+}
+
+/** Short day label 'Mon', 'Tue', etc. from 'YYYY-MM-DD' */
+function dayLabel(dateStr: string): string {
+  return new Date(dateStr + 'T12:00:00').toLocaleDateString('en-US', { weekday: 'short' })
+}
+
 // ─── Main Component ───────────────────────────────────────────────────────────
 export default function Dashboard() {
   const router = useRouter()
@@ -142,6 +166,11 @@ export default function Dashboard() {
   const [toast, setToast]             = useState<ToastState>({ msg: '', type: 'success', visible: false })
   const [deleteTarget, setDeleteTarget] = useState<string | null>(null)
   const [deleteLoading, setDeleteLoading] = useState(false)
+
+  // ── Analytics state ──────────────────────────────────────────────────────
+  const [analyticsLoading, setAnalyticsLoading] = useState(false)
+  const [dailyStreams, setDailyStreams] = useState<DailyStreamMap>({})
+  const [analyticsdays] = useState<string[]>(lastNDays(7))
 
   // Upload state
   const [uploadTitle, setUploadTitle]       = useState('')
@@ -283,6 +312,102 @@ export default function Dashboard() {
     setTracksLoading(false)
   }
 
+  // ── Load daily stream history from Firestore ─────────────────────────────
+  // Expected Firestore structure:
+  //   streamHistory/{trackTitle}/days/{YYYY-MM-DD} → { count: number }
+  // OR flat:
+  //   streamHistory/{YYYY-MM-DD} → { [trackTitle]: number }
+  // We try both patterns and merge.
+  const loadDailyStreams = useCallback(async (currentTracks: Track[]) => {
+    if (currentTracks.length === 0) return
+    setAnalyticsLoading(true)
+
+    const days = lastNDays(7)
+    const merged: DailyStreamMap = {}
+    days.forEach(d => { merged[d] = 0 })
+
+    try {
+      // Pattern A: flat docs  streamHistory/YYYY-MM-DD  { trackTitle: count, ... }
+      const flatResults = await Promise.allSettled(
+        days.map(async (day) => {
+          const snap = await getDoc(doc(db, 'streamHistory', day))
+          if (snap.exists()) {
+            const data = snap.data() as Record<string, number>
+            // sum all track counts for this artist
+            const artistTrackTitles = new Set(currentTracks.map(t => t.title))
+            let dayTotal = 0
+            for (const [key, val] of Object.entries(data)) {
+              if (artistTrackTitles.has(key)) dayTotal += (val || 0)
+            }
+            return { day, count: dayTotal }
+          }
+          return { day, count: 0 }
+        })
+      )
+
+      let flatHasData = false
+      flatResults.forEach(r => {
+        if (r.status === 'fulfilled' && r.value.count > 0) {
+          merged[r.value.day] = (merged[r.value.day] || 0) + r.value.count
+          flatHasData = true
+        }
+      })
+
+      // Pattern B: per-track sub-collections  streamHistory/{trackTitle}/days/{YYYY-MM-DD}
+      if (!flatHasData) {
+        await Promise.allSettled(
+          currentTracks.map(async (track) => {
+            await Promise.allSettled(
+              days.map(async (day) => {
+                try {
+                  const snap = await getDoc(
+                    doc(db, 'streamHistory', track.title, 'days', day)
+                  )
+                  if (snap.exists()) {
+                    const cnt = (snap.data()?.count as number) || 0
+                    merged[day] = (merged[day] || 0) + cnt
+                  }
+                } catch { /* ignore missing */ }
+              })
+            )
+          })
+        )
+      }
+
+      // Pattern C: top-level  streamDays/{YYYY-MM-DD}/{trackTitle}  (collection)
+      // Try reading as sub-collections of streamDays
+      if (!flatHasData && Object.values(merged).every(v => v === 0)) {
+        await Promise.allSettled(
+          days.map(async (day) => {
+            try {
+              const colSnap = await getDocs(collection(db, 'streamDays', day, 'tracks'))
+              const artistTrackTitles = new Set(currentTracks.map(t => t.title))
+              colSnap.forEach(docSnap => {
+                if (artistTrackTitles.has(docSnap.id)) {
+                  const cnt = (docSnap.data()?.count as number) || 0
+                  merged[day] = (merged[day] || 0) + cnt
+                }
+              })
+            } catch { /* ignore */ }
+          })
+        )
+      }
+
+    } catch (err) {
+      console.error('[Analytics] loadDailyStreams error:', err)
+    }
+
+    setDailyStreams(merged)
+    setAnalyticsLoading(false)
+  }, [])
+
+  // Re-load daily streams when tracks finish loading
+  useEffect(() => {
+    if (!tracksLoading && tracks.length > 0) {
+      loadDailyStreams(tracks)
+    }
+  }, [tracksLoading, tracks, loadDailyStreams])
+
   // ── Derived stats ────────────────────────────────────────────────────────
   const totalStreams = tracks.reduce((s, t) => s + t.streams, 0)
   const totalGoa     = Math.floor(totalStreams / 10)
@@ -290,6 +415,27 @@ export default function Dashboard() {
   const zltEarned    = Math.floor(totalGoa * 0.15)
   const listeners    = Math.floor(totalStreams * 0.6)
   const verified     = profileData.verified || false
+
+  // Daily stream chart values
+  const chartVals = analyticsdays.map(d => dailyStreams[d] || 0)
+  const todayStreams = dailyStreams[analyticsdays[analyticsdays.length - 1]] || 0
+  const yesterdayStreams = dailyStreams[analyticsdays[analyticsdays.length - 2]] || 0
+  const weekTotal = chartVals.reduce((a, b) => a + b, 0)
+
+  // Top genre from tracks
+  const genreCount: Record<string, number> = {}
+  tracks.forEach(t => {
+    if (t.genre) genreCount[t.genre] = (genreCount[t.genre] || 0) + t.streams
+  })
+  const topGenre = Object.entries(genreCount).sort((a, b) => b[1] - a[1])[0]?.[0] || '—'
+
+  // Avg streams per track
+  const avgStreams = tracks.length > 0 ? Math.round(totalStreams / tracks.length) : 0
+
+  // Stream trend vs yesterday
+  const streamTrend = yesterdayStreams > 0
+    ? ((todayStreams - yesterdayStreams) / yesterdayStreams * 100).toFixed(0)
+    : null
 
   // ── Upload ───────────────────────────────────────────────────────────────
   async function handleUpload() {
@@ -396,13 +542,6 @@ export default function Dashboard() {
     await signOut(auth)
     router.replace('/')
   }
-
-  // ── Chart data ───────────────────────────────────────────────────────────
-  const days      = ['Mon', 'Tue', 'Wed', 'Thu', 'Fri', 'Sat', 'Sun']
-  const maxStream = Math.max(totalStreams * 0.25, 10)
-  const chartVals = days.map((_, i) =>
-    Math.floor((((i * 7 + 3) % 10) / 10) * maxStream * (i >= 5 ? 1.4 : 1))
-  )
 
   const hour  = new Date().getHours()
   const greet = hour < 12 ? 'Good morning' : hour < 18 ? 'Good afternoon' : 'Good evening'
@@ -811,67 +950,203 @@ export default function Dashboard() {
     )
   }
 
+  // ── LIVE ANALYTICS PAGE ──────────────────────────────────────────────────
   function PageAnalytics() {
     const maxBar = Math.max(...chartVals, 1)
+
     return (
       <div>
-        <div style={{ marginBottom: 28 }}>
-          <h1 style={{ fontFamily: "'Poppins', sans-serif", fontSize: 'clamp(22px, 4vw, 28px)', fontWeight: 800, color: T.text, margin: 0 }}>Analytics</h1>
-          <p style={{ fontSize: 14, color: T.muted, marginTop: 4 }}>Stream data for your music</p>
+        <div style={{ display: 'flex', alignItems: 'flex-start', justifyContent: 'space-between', marginBottom: 28, gap: 12, flexWrap: 'wrap' }}>
+          <div>
+            <h1 style={{ fontFamily: "'Poppins', sans-serif", fontSize: 'clamp(22px, 4vw, 28px)', fontWeight: 800, color: T.text, margin: 0 }}>Analytics</h1>
+            <p style={{ fontSize: 14, color: T.muted, marginTop: 4 }}>Live stream data from Firebase & Airtable</p>
+          </div>
+          <button
+            onClick={() => loadDailyStreams(tracks)}
+            disabled={analyticsLoading || tracksLoading}
+            style={{ ...btnGhost, opacity: (analyticsLoading || tracksLoading) ? 0.5 : 1 }}
+          >
+            <RefreshCw size={13} style={{ animation: analyticsLoading ? 'spin 0.8s linear infinite' : 'none' }} />
+            Refresh
+          </button>
         </div>
 
+        {/* Summary stat strip */}
+        <div style={{ display: 'grid', gridTemplateColumns: 'repeat(auto-fit, minmax(150px, 1fr))', gap: 12, marginBottom: 20 }}>
+          {[
+            {
+              label: "Today's Streams",
+              value: analyticsLoading ? '—' : todayStreams.toLocaleString(),
+              sub: streamTrend !== null
+                ? `${Number(streamTrend) >= 0 ? '▲' : '▼'} ${Math.abs(Number(streamTrend))}% vs yesterday`
+                : 'vs yesterday',
+              color: streamTrend !== null && Number(streamTrend) >= 0 ? T.success : T.danger,
+            },
+            {
+              label: '7-Day Total',
+              value: analyticsLoading ? '—' : weekTotal.toLocaleString(),
+              sub: 'this week',
+              color: T.accent,
+            },
+            {
+              label: 'Avg / Track',
+              value: analyticsLoading ? '—' : avgStreams.toLocaleString(),
+              sub: 'mean streams',
+              color: '#a855f7',
+            },
+            {
+              label: 'Top Genre',
+              value: tracksLoading ? '—' : topGenre,
+              sub: 'by stream count',
+              color: '#22c55e',
+            },
+          ].map(s => (
+            <div key={s.label} style={{
+              background: T.card, border: `1px solid ${T.border}`, borderRadius: 12,
+              padding: '16px 18px', position: 'relative', overflow: 'hidden',
+            }}>
+              <div style={{ position: 'absolute', top: 0, left: 0, right: 0, height: 2, background: s.color }} />
+              <div style={{ fontSize: 11, color: T.muted, textTransform: 'uppercase', letterSpacing: '0.06em', fontWeight: 600, marginBottom: 8 }}>{s.label}</div>
+              <div style={{ fontFamily: "'Poppins', sans-serif", fontSize: 22, fontWeight: 800, color: T.text, lineHeight: 1, marginBottom: 4 }}>{s.value}</div>
+              <div style={{ fontSize: 11, color: s.color }}>{s.sub}</div>
+            </div>
+          ))}
+        </div>
+
+        {/* Bar chart */}
         <div style={{ ...card, marginBottom: 20 }}>
-          <h2 style={{ fontFamily: "'Poppins', sans-serif", fontSize: 16, fontWeight: 700, color: T.text, margin: '0 0 20px' }}>Streams — Last 7 Days</h2>
-          <div style={{ display: 'flex', alignItems: 'flex-end', gap: 8, height: 160, paddingBottom: 24 }}>
-            {chartVals.map((v, i) => (
-              <div key={i} style={{ display: 'flex', flexDirection: 'column', alignItems: 'center', gap: 4, flex: 1 }}>
-                <div style={{
-                  width:        '100%',
-                  borderRadius: '5px 5px 0 0',
-                  height:       `${Math.max((v / maxBar) * 100, 4)}%`,
-                  background:   `linear-gradient(180deg, ${T.accent}, rgba(255,215,0,0.2))`,
-                }} title={`${v} streams`} />
-                <span style={{ fontSize: 11, color: T.muted2 }}>{days[i]}</span>
-              </div>
-            ))}
+          <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between', marginBottom: 20 }}>
+            <h2 style={{ fontFamily: "'Poppins', sans-serif", fontSize: 16, fontWeight: 700, color: T.text, margin: 0 }}>
+              Streams — Last 7 Days
+            </h2>
+            {analyticsLoading && (
+              <span style={{ display: 'flex', alignItems: 'center', gap: 6, fontSize: 12, color: T.muted }}>
+                <Loader2 size={13} style={{ animation: 'spin 0.8s linear infinite' }} /> Loading...
+              </span>
+            )}
           </div>
+
+          {/* Y-axis labels + bars */}
+          <div style={{ display: 'flex', gap: 8 }}>
+            {/* Y axis */}
+            <div style={{ display: 'flex', flexDirection: 'column', justifyContent: 'space-between', paddingBottom: 24, paddingTop: 4 }}>
+              {[maxBar, Math.round(maxBar * 0.5), 0].map(v => (
+                <span key={v} style={{ fontSize: 10, color: T.muted2, textAlign: 'right', minWidth: 28 }}>
+                  {v > 999 ? `${(v / 1000).toFixed(1)}k` : v}
+                </span>
+              ))}
+            </div>
+            {/* Bars */}
+            <div style={{ flex: 1, display: 'flex', alignItems: 'flex-end', gap: 6, height: 180, paddingBottom: 24, position: 'relative' }}>
+              {/* Grid lines */}
+              {[0, 50, 100].map(pct => (
+                <div key={pct} style={{
+                  position: 'absolute', left: 0, right: 0,
+                  bottom: `calc(24px + ${pct}% * (180px - 24px) / 100)`,
+                  height: 1, background: T.border, pointerEvents: 'none',
+                }} />
+              ))}
+              {chartVals.map((v, i) => {
+                const isToday = i === chartVals.length - 1
+                const heightPct = Math.max((v / maxBar) * 100, v > 0 ? 4 : 2)
+                return (
+                  <div key={i} style={{ display: 'flex', flexDirection: 'column', alignItems: 'center', gap: 4, flex: 1 }}>
+                    {/* Count label above bar */}
+                    {v > 0 && (
+                      <span style={{ fontSize: 10, color: isToday ? T.accent : T.muted, fontWeight: isToday ? 700 : 400, marginBottom: 2 }}>
+                        {v > 999 ? `${(v / 1000).toFixed(1)}k` : v}
+                      </span>
+                    )}
+                    <div style={{
+                      width:        '100%',
+                      borderRadius: '5px 5px 0 0',
+                      height:       `${heightPct}%`,
+                      background:   isToday
+                        ? `linear-gradient(180deg, ${T.accent}, rgba(255,215,0,0.5))`
+                        : `linear-gradient(180deg, rgba(255,215,0,0.5), rgba(255,215,0,0.1))`,
+                      boxShadow:    isToday ? `0 0 12px rgba(255,215,0,0.3)` : 'none',
+                      transition:   'height 0.4s ease',
+                    }} title={`${v.toLocaleString()} streams`} />
+                    <span style={{ fontSize: 11, color: isToday ? T.accent : T.muted2, fontWeight: isToday ? 600 : 400 }}>
+                      {isToday ? 'Today' : dayLabel(analyticsdays[i])}
+                    </span>
+                  </div>
+                )
+              })}
+            </div>
+          </div>
+
+          {weekTotal === 0 && !analyticsLoading && (
+            <div style={{ textAlign: 'center', padding: '12px 0 0', fontSize: 13, color: T.muted }}>
+              No stream history data found for this period. Make sure your app writes to{' '}
+              <code style={{ color: T.accent, background: T.bg3, padding: '2px 6px', borderRadius: 4 }}>streamHistory/YYYY-MM-DD</code> in Firestore.
+            </div>
+          )}
         </div>
 
         <div style={{ display: 'grid', gridTemplateColumns: 'repeat(auto-fit, minmax(280px, 1fr))', gap: 16 }}>
+          {/* Streams by track — live from tracks state */}
           <div style={card}>
             <h2 style={{ fontFamily: "'Poppins', sans-serif", fontSize: 16, fontWeight: 700, color: T.text, margin: '0 0 18px' }}>Streams by Track</h2>
             {tracksLoading ? (
-              <div style={{ color: T.muted, fontSize: 14 }}>Loading...</div>
+              <div style={{ display: 'flex', alignItems: 'center', gap: 8, color: T.muted, fontSize: 14 }}>
+                <Loader2 size={14} style={{ animation: 'spin 0.8s linear infinite' }} /> Loading...
+              </div>
             ) : tracks.length === 0 ? (
               <div style={{ color: T.muted, fontSize: 14 }}>No track data yet.</div>
             ) : (
-              tracks.slice(0, 6).map(t => {
+              tracks.slice(0, 8).map(t => {
                 const maxS = Math.max(...tracks.map(x => x.streams), 1)
+                const pct  = Math.max(((t.streams || 0) / maxS) * 100, 2)
                 return (
                   <div key={t.id} style={{ marginBottom: 14 }}>
-                    <div style={{ display: 'flex', justifyContent: 'space-between', fontSize: 13, marginBottom: 4 }}>
-                      <span style={{ fontWeight: 600, overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap', maxWidth: '65%', color: T.text }}>{t.title}</span>
-                      <span style={{ color: T.muted }}>{(t.streams || 0).toLocaleString()}</span>
+                    <div style={{ display: 'flex', justifyContent: 'space-between', fontSize: 13, marginBottom: 5 }}>
+                      <span style={{
+                        fontWeight: 600, overflow: 'hidden', textOverflow: 'ellipsis',
+                        whiteSpace: 'nowrap', maxWidth: '65%', color: T.text,
+                      }}>{t.title}</span>
+                      <span style={{ color: T.muted, flexShrink: 0 }}>
+                        {(t.streams || 0).toLocaleString()} <span style={{ color: T.muted2 }}>streams</span>
+                      </span>
                     </div>
-                    <div style={{ height: 4, background: T.border2, borderRadius: 2, overflow: 'hidden' }}>
-                      <div style={{ height: '100%', width: `${Math.max(((t.streams || 0) / maxS) * 100, 2)}%`, background: `linear-gradient(90deg, ${T.accent}, ${T.accent2})`, borderRadius: 2 }} />
+                    <div style={{ height: 5, background: T.border2, borderRadius: 3, overflow: 'hidden' }}>
+                      <div style={{
+                        height: '100%', width: `${pct}%`,
+                        background: `linear-gradient(90deg, ${T.accent}, ${T.accent2})`,
+                        borderRadius: 3, transition: 'width 0.5s ease',
+                      }} />
                     </div>
                   </div>
                 )
               })
             )}
+            {tracks.length > 0 && (
+              <div style={{ marginTop: 6, fontSize: 12, color: T.muted }}>
+                {tracks.length} track{tracks.length !== 1 ? 's' : ''} · {totalStreams.toLocaleString()} total streams
+              </div>
+            )}
           </div>
 
+          {/* Audience insight — derived from real data */}
           <div style={card}>
-            <h2 style={{ fontFamily: "'Poppins', sans-serif", fontSize: 16, fontWeight: 700, color: T.text, margin: '0 0 18px' }}>Audience Insight</h2>
+            <h2 style={{ fontFamily: "'Poppins', sans-serif", fontSize: 16, fontWeight: 700, color: T.text, margin: '0 0 18px' }}>
+              Audience Insight
+            </h2>
             {[
-              ['Top Country',          '🇬🇭 Ghana'],
-              ['Avg. Stream Duration', '2m 14s'],
-              ['Repeat Listeners',     '61%'],
-              ['Mobile vs Desktop',    '78% / 22%'],
-              ['Peak Hour',            '8 PM – 10 PM'],
+              ['Total Tracks',       tracks.length > 0 ? `${tracks.length} tracks` : '—'],
+              ['Total Streams',      totalStreams > 0 ? totalStreams.toLocaleString() : '—'],
+              ['Today\'s Streams',   analyticsLoading ? 'Loading...' : todayStreams > 0 ? todayStreams.toLocaleString() : '0'],
+              ['This Week',         analyticsLoading ? 'Loading...' : weekTotal > 0 ? weekTotal.toLocaleString() : '0'],
+              ['Top Genre',          tracksLoading ? '—' : topGenre],
+              ['Avg Streams / Track', tracks.length > 0 ? avgStreams.toLocaleString() : '—'],
+              ['Est. Listeners',     listeners > 0 ? listeners.toLocaleString() : '—'],
+              ['$GOA Earned',        totalGoa > 0 ? `${totalGoa.toLocaleString()} $GOA` : '—'],
             ].map(([label, val]) => (
-              <div key={label} style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', fontSize: 14, marginBottom: 14 }}>
+              <div key={label} style={{
+                display: 'flex', justifyContent: 'space-between', alignItems: 'center',
+                fontSize: 13, marginBottom: 13, paddingBottom: 13,
+                borderBottom: `1px solid ${T.border}`,
+              }}>
                 <span style={{ color: T.muted }}>{label}</span>
                 <span style={{ fontWeight: 600, color: T.text }}>{val}</span>
               </div>
