@@ -1122,7 +1122,7 @@ export default function Dashboard() {
   const currencies = payoutGateway === 'stripe' ? stripeCurrencies : fwCurrencies
  
   // Approximate GOA → USD rate (placeholder; wire up a real oracle)
-  const GOA_USD_RATE = 0.012
+  const GOA_USD_RATE = 1.08
   const estimatedUSD = payoutAmount ? (parseFloat(payoutAmount) * GOA_USD_RATE).toFixed(2) : '0.00'
  
   async function handlePayout() {
