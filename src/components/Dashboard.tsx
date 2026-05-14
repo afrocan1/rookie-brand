@@ -9,6 +9,19 @@ import {
   signOut,
 } from 'firebase/auth'
 import {
+  Wallet,
+  CreditCard,
+  Building2,
+  ArrowDownToLine,
+  ShieldCheck,
+  ChevronDown,
+  Globe,
+  Phone,
+  Hash,
+  DollarSign,
+  Info,
+} from 'lucide-react'
+import {
   doc,
   getDoc,
   setDoc,
@@ -1084,58 +1097,445 @@ export default function Dashboard() {
 
   // ── EARNINGS ──────────────────────────────────────────────────────────────
   function PageEarnings() {
-    return (
-      <div>
-        <div style={{ marginBottom: 28 }}>
-          <h1 style={{ fontFamily: "'Poppins', sans-serif", fontSize: 'clamp(22px, 4vw, 28px)', fontWeight: 800, color: T.text, margin: 0 }}>Earnings</h1>
-          <p style={{ fontSize: 14, color: T.muted, marginTop: 4 }}>Your Stream-to-Earn rewards</p>
+  // Local state — all payout UI lives here
+  const [payoutGateway, setPayoutGateway]      = useState<'stripe' | 'flutterwave'>('flutterwave')
+  const [payoutAmount, setPayoutAmount]         = useState('')
+  const [payoutCurrency, setPayoutCurrency]     = useState('GHS')
+  const [payoutAccount, setPayoutAccount]       = useState('')
+  const [payoutName, setPayoutName]             = useState('')
+  const [payoutPhone, setPayoutPhone]           = useState('')
+  const [payoutBank, setPayoutBank]             = useState('')
+  const [payoutProcessing, setPayoutProcessing] = useState(false)
+  const [payoutSuccess, setPayoutSuccess]       = useState(false)
+  const [payoutError, setPayoutError]           = useState('')
+ 
+  // Minimum payout threshold (in $GOA)
+  const MIN_PAYOUT = 500
+  const canPayout  = totalGoa >= MIN_PAYOUT && !tracksLoading
+ 
+  // Flutterwave currencies for Africa / global
+  const fwCurrencies = ['GHS', 'NGN', 'KES', 'UGX', 'TZS', 'XOF', 'USD', 'GBP', 'EUR', 'ZAR']
+  // Stripe currencies
+  const stripeCurrencies = ['USD', 'GBP', 'EUR', 'CAD', 'AUD', 'SGD']
+ 
+  const currencies = payoutGateway === 'stripe' ? stripeCurrencies : fwCurrencies
+ 
+  // Approximate GOA → USD rate (placeholder; wire up a real oracle)
+  const GOA_USD_RATE = 0.012
+  const estimatedUSD = payoutAmount ? (parseFloat(payoutAmount) * GOA_USD_RATE).toFixed(2) : '0.00'
+ 
+  async function handlePayout() {
+    setPayoutError('')
+    if (!payoutAmount || parseFloat(payoutAmount) < MIN_PAYOUT) {
+      setPayoutError(`Minimum payout is ${MIN_PAYOUT} $GOA.`)
+      return
+    }
+    if (!payoutName.trim()) { setPayoutError('Full name is required.'); return }
+    if (payoutGateway === 'flutterwave' && !payoutPhone.trim()) {
+      setPayoutError('Mobile money number is required.'); return
+    }
+    if (payoutGateway === 'stripe' && !payoutAccount.trim()) {
+      setPayoutError('Stripe account ID or IBAN is required.'); return
+    }
+ 
+    setPayoutProcessing(true)
+    // TODO: replace with real API call to your backend payout endpoint
+    await new Promise(r => setTimeout(r, 2200))
+    setPayoutProcessing(false)
+    setPayoutSuccess(true)
+    setTimeout(() => setPayoutSuccess(false), 5000)
+  }
+ 
+  // ── Shared sub-styles ────────────────────────────────────────────────────
+  const sectionLabel: React.CSSProperties = {
+    fontSize: 11, color: T.muted, textTransform: 'uppercase',
+    letterSpacing: '0.06em', fontWeight: 600, fontFamily: "'DM Sans', sans-serif",
+    marginBottom: 6,
+  }
+ 
+  const fieldWrap: React.CSSProperties = { display: 'flex', flexDirection: 'column', gap: 6 }
+ 
+  const gatewayBtn = (active: boolean, color: string): React.CSSProperties => ({
+    flex: 1,
+    display: 'flex', alignItems: 'center', justifyContent: 'center', gap: 10,
+    padding: '14px 16px',
+    borderRadius: 12,
+    border: `1px solid ${active ? color : T.border}`,
+    background: active ? `${color}12` : T.bg2,
+    cursor: 'pointer',
+    transition: 'all 0.18s',
+    fontFamily: "'DM Sans', sans-serif",
+  })
+ 
+  // ── Render ────────────────────────────────────────────────────────────────
+  return (
+    <div>
+      {/* ── Page header ── */}
+      <div style={{ marginBottom: 28 }}>
+        <h1 style={{ fontFamily: "'Poppins', sans-serif", fontSize: 'clamp(22px, 4vw, 28px)', fontWeight: 800, color: T.text, margin: 0 }}>
+          Earnings
+        </h1>
+        <p style={{ fontSize: 14, color: T.muted, marginTop: 4 }}>Your Stream-to-Earn rewards and payout management</p>
+      </div>
+ 
+      {/* ── Total earned hero ── */}
+      <div style={{ ...card, marginBottom: 16 }}>
+        <div style={{ textAlign: 'center', padding: '12px 0 24px' }}>
+          <div style={{ fontSize: 11, color: T.muted, textTransform: 'uppercase', letterSpacing: '0.06em', marginBottom: 10, fontFamily: "'DM Sans', sans-serif", fontWeight: 600 }}>
+            Total Earned
+          </div>
+          <div style={{ fontFamily: "'Poppins', sans-serif", fontSize: 'clamp(42px, 10vw, 60px)', fontWeight: 800, lineHeight: 1, color: T.text }}>
+            {tracksLoading ? '—' : totalGoa.toLocaleString()}
+          </div>
+          <div style={{ fontSize: 16, color: T.accent, fontWeight: 700, marginTop: 6 }}>$GOA</div>
+          <div style={{ fontSize: 12, color: T.muted, marginTop: 8 }}>
+            ≈ ${tracksLoading ? '—' : (totalGoa * GOA_USD_RATE).toFixed(2)} USD at current rate
+          </div>
         </div>
-        <div style={{ ...card, marginBottom: 20 }}>
-          <div style={{ textAlign: 'center', padding: '12px 0 24px' }}>
-            <div style={{ fontSize: 11, color: T.muted, textTransform: 'uppercase', letterSpacing: '0.06em', marginBottom: 10, fontFamily: "'DM Sans', sans-serif", fontWeight: 600 }}>Total Earned</div>
-            <div style={{ fontFamily: "'Poppins', sans-serif", fontSize: 'clamp(42px, 10vw, 60px)', fontWeight: 800, lineHeight: 1, color: T.text }}>
-              {tracksLoading ? '—' : totalGoa.toLocaleString()}
+ 
+        {/* Stat grid */}
+        <div style={{ display: 'grid', gridTemplateColumns: 'repeat(auto-fit, minmax(130px, 1fr))', gap: 12 }}>
+          {[
+            { label: 'This Month',     value: tracksLoading ? '—' : monthlyGoa, token: '$GOA' },
+            { label: 'Last Month',     value: '—',                              token: '$GOA' },
+            { label: '$ZLT Earned',    value: tracksLoading ? '—' : zltEarned,  token: '$ZLT' },
+            { label: 'Pending Payout', value: '—',                              token: 'Review in 30 days' },
+          ].map(item => (
+            <div key={item.label} style={{ background: T.bg2, border: `1px solid ${T.border}`, borderRadius: 10, padding: '14px 16px' }}>
+              <div style={{ fontSize: 12, color: T.muted, marginBottom: 8 }}>{item.label}</div>
+              <div style={{ fontFamily: "'Poppins', sans-serif", fontSize: 20, fontWeight: 700, color: T.text }}>{item.value}</div>
+              <div style={{ fontSize: 11, color: T.muted2, marginTop: 2 }}>{item.token}</div>
             </div>
-            <div style={{ fontSize: 16, color: T.accent, fontWeight: 700, marginTop: 6 }}>$GOA</div>
-          </div>
-          <div style={{ display: 'grid', gridTemplateColumns: 'repeat(auto-fit, minmax(140px, 1fr))', gap: 12 }}>
-            {[
-              { label: 'This Month',     value: tracksLoading ? '—' : monthlyGoa, token: '$GOA' },
-              { label: 'Last Month',     value: '—',                              token: '$GOA' },
-              { label: '$ZLT Earned',    value: tracksLoading ? '—' : zltEarned,  token: '$ZLT' },
-              { label: 'Pending Payout', value: '—',                              token: 'Review in 30 days' },
-            ].map(item => (
-              <div key={item.label} style={{ background: T.bg2, border: `1px solid ${T.border}`, borderRadius: 10, padding: '14px 16px' }}>
-                <div style={{ fontSize: 12, color: T.muted, marginBottom: 8 }}>{item.label}</div>
-                <div style={{ fontFamily: "'Poppins', sans-serif", fontSize: 20, fontWeight: 700, color: T.text }}>{item.value}</div>
-                <div style={{ fontSize: 11, color: T.muted2, marginTop: 2 }}>{item.token}</div>
-              </div>
-            ))}
-          </div>
-        </div>
-        <div style={card}>
-          <h2 style={{ fontFamily: "'Poppins', sans-serif", fontSize: 16, fontWeight: 700, color: T.text, margin: '0 0 18px' }}>How earnings work</h2>
-          <div style={{ display: 'flex', flexDirection: 'column', gap: 16 }}>
-            {[
-              ['Listeners stream your tracks', 'Every unique stream on Goaradio is logged in real-time.'],
-              ['$GOA tokens are allocated',     'Artists receive $GOA proportional to their total stream count each epoch.'],
-              ['Withdraw to your wallet',       'Claim your $GOA at the end of each 30-day epoch. Connect a wallet to begin.'],
-            ].map(([title, sub], i) => (
-              <div key={title} style={{ display: 'flex', gap: 14, alignItems: 'flex-start' }}>
-                <div style={{ width: 28, height: 28, borderRadius: 8, flexShrink: 0, background: 'rgba(255,215,0,0.08)', border: `1px solid rgba(255,215,0,0.15)`, display: 'flex', alignItems: 'center', justifyContent: 'center', fontSize: 12, fontWeight: 700, color: T.accent, fontFamily: "'Poppins', sans-serif" }}>
-                  {i + 1}
-                </div>
-                <div>
-                  <div style={{ fontSize: 14, fontWeight: 600, color: T.text, marginBottom: 3 }}>{title}</div>
-                  <div style={{ fontSize: 13, color: T.muted, lineHeight: 1.6 }}>{sub}</div>
-                </div>
-              </div>
-            ))}
-          </div>
+          ))}
         </div>
       </div>
-    )
-  }
+ 
+      {/* ── PAYOUT GATEWAY ────────────────────────────────────────────────── */}
+      <div style={{ ...card, marginBottom: 16 }}>
+ 
+        {/* Section header */}
+        <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between', marginBottom: 22, flexWrap: 'wrap', gap: 10 }}>
+          <div>
+            <h2 style={{ fontFamily: "'Poppins', sans-serif", fontSize: 17, fontWeight: 700, color: T.text, margin: '0 0 4px' }}>
+              Request Payout
+            </h2>
+            <p style={{ fontSize: 13, color: T.muted, margin: 0 }}>
+              Withdraw your $GOA earnings directly to your bank or mobile wallet
+            </p>
+          </div>
+          <div style={{ display: 'flex', alignItems: 'center', gap: 6, padding: '6px 12px', borderRadius: 20, background: 'rgba(34,197,94,0.07)', border: '1px solid rgba(34,197,94,0.18)' }}>
+            <ShieldCheck size={13} color={T.success} />
+            <span style={{ fontSize: 12, color: T.success, fontWeight: 600 }}>Secured</span>
+          </div>
+        </div>
+ 
+        {/* Minimum threshold notice */}
+        {!canPayout && !tracksLoading && (
+          <div style={{ display: 'flex', gap: 10, alignItems: 'flex-start', padding: '12px 16px', borderRadius: 10, background: 'rgba(255,215,0,0.05)', border: `1px solid rgba(255,215,0,0.18)`, marginBottom: 22 }}>
+            <Info size={15} color={T.accent} style={{ flexShrink: 0, marginTop: 1 }} />
+            <div style={{ fontSize: 13, color: T.muted, lineHeight: 1.6 }}>
+              You need at least <span style={{ color: T.accent, fontWeight: 600 }}>{MIN_PAYOUT} $GOA</span> to request a payout.
+              You currently have <span style={{ color: T.text, fontWeight: 600 }}>{totalGoa} $GOA</span>.
+              Keep streaming to unlock withdrawals.
+            </div>
+          </div>
+        )}
+ 
+        {/* Gateway selector */}
+        <div style={{ marginBottom: 22 }}>
+          <p style={{ ...sectionLabel, marginBottom: 10 }}>Select Payout Method</p>
+          <div style={{ display: 'flex', gap: 12, flexWrap: 'wrap' }}>
+ 
+            {/* Flutterwave */}
+            <button
+              onClick={() => { setPayoutGateway('flutterwave'); setPayoutCurrency('GHS') }}
+              style={gatewayBtn(payoutGateway === 'flutterwave', '#f5a623')}
+            >
+              {/* Flutterwave wordmark SVG */}
+              <svg width="20" height="20" viewBox="0 0 32 32" fill="none" xmlns="http://www.w3.org/2000/svg">
+                <rect width="32" height="32" rx="6" fill="#f5a623"/>
+                <path d="M8 10c2-3 6-3 8 0l2 3c2 3 6 3 8 0" stroke="#fff" strokeWidth="2.2" strokeLinecap="round" fill="none"/>
+                <path d="M8 16c2-3 6-3 8 0l2 3c2 3 6 3 8 0" stroke="#fff" strokeWidth="2.2" strokeLinecap="round" fill="none"/>
+                <path d="M8 22c2-3 6-3 8 0l2 3c2 3 6 3 8 0" stroke="#fff" strokeWidth="2.2" strokeLinecap="round" fill="none"/>
+              </svg>
+              <div style={{ textAlign: 'left' }}>
+                <div style={{ fontSize: 13, fontWeight: 700, color: payoutGateway === 'flutterwave' ? T.text : T.muted }}>Flutterwave</div>
+                <div style={{ fontSize: 11, color: T.muted }}>Mobile money · Bank transfer</div>
+              </div>
+              {payoutGateway === 'flutterwave' && (
+                <span style={{ marginLeft: 'auto', width: 18, height: 18, borderRadius: '50%', background: '#f5a623', display: 'flex', alignItems: 'center', justifyContent: 'center', flexShrink: 0 }}>
+                  <Check size={10} color="#fff" />
+                </span>
+              )}
+            </button>
+ 
+            {/* Stripe */}
+            <button
+              onClick={() => { setPayoutGateway('stripe'); setPayoutCurrency('USD') }}
+              style={gatewayBtn(payoutGateway === 'stripe', '#635bff')}
+            >
+              {/* Stripe wordmark SVG */}
+              <svg width="20" height="20" viewBox="0 0 32 32" fill="none" xmlns="http://www.w3.org/2000/svg">
+                <rect width="32" height="32" rx="6" fill="#635bff"/>
+                <path d="M15.2 13.2c0-.88.72-1.2 1.92-1.2 1.72 0 3.44.52 4.88 1.4V9.08A13.08 13.08 0 0017.12 8c-4.32 0-7.12 2.28-7.12 6.08 0 5.92 8.16 4.96 8.16 7.52 0 1.04-.88 1.4-2.16 1.4-1.84 0-3.84-.76-5.52-1.84v4.36c1.88.8 3.76 1.16 5.52 1.16 4.4 0 7.44-2.2 7.44-6.04-.04-6.4-8.24-5.24-8.24-7.44z" fill="#fff"/>
+              </svg>
+              <div style={{ textAlign: 'left' }}>
+                <div style={{ fontSize: 13, fontWeight: 700, color: payoutGateway === 'stripe' ? T.text : T.muted }}>Stripe</div>
+                <div style={{ fontSize: 11, color: T.muted }}>Bank · Card · International</div>
+              </div>
+              {payoutGateway === 'stripe' && (
+                <span style={{ marginLeft: 'auto', width: 18, height: 18, borderRadius: '50%', background: '#635bff', display: 'flex', alignItems: 'center', justifyContent: 'center', flexShrink: 0 }}>
+                  <Check size={10} color="#fff" />
+                </span>
+              )}
+            </button>
+          </div>
+        </div>
+ 
+        {/* Divider */}
+        <div style={{ height: 1, background: T.border, marginBottom: 22 }} />
+ 
+        {/* Payout form */}
+        <div style={{ display: 'grid', gridTemplateColumns: 'repeat(auto-fit, minmax(240px, 1fr))', gap: 16, marginBottom: 20 }}>
+ 
+          {/* Amount + currency */}
+          <div style={fieldWrap}>
+            <label style={sectionLabel}>Amount ($GOA)</label>
+            <div style={{ display: 'flex', gap: 0 }}>
+              <div style={{ display: 'flex', alignItems: 'center', padding: '0 12px', background: T.bg3, border: `1px solid ${T.border2}`, borderRight: 'none', borderRadius: '10px 0 0 10px' }}>
+                <Coins size={14} color={T.accent} />
+              </div>
+              <input
+                style={{ ...inputStyle, borderRadius: '0 10px 10px 0', flex: 1 }}
+                type="number"
+                min={MIN_PAYOUT}
+                max={totalGoa}
+                value={payoutAmount}
+                onChange={e => setPayoutAmount(e.target.value)}
+                placeholder={`Min ${MIN_PAYOUT}`}
+                disabled={!canPayout}
+              />
+            </div>
+            {payoutAmount && (
+              <div style={{ fontSize: 12, color: T.muted, display: 'flex', alignItems: 'center', gap: 5 }}>
+                <DollarSign size={11} color={T.success} />
+                ≈ ${estimatedUSD} {payoutCurrency}
+              </div>
+            )}
+          </div>
+ 
+          {/* Currency */}
+          <div style={fieldWrap}>
+            <label style={sectionLabel}>Payout Currency</label>
+            <div style={{ position: 'relative' }}>
+              <div style={{ position: 'absolute', left: 12, top: '50%', transform: 'translateY(-50%)', display: 'flex', alignItems: 'center' }}>
+                <Globe size={14} color={T.muted} />
+              </div>
+              <select
+                style={{ ...inputStyle, paddingLeft: 36, appearance: 'none' }}
+                value={payoutCurrency}
+                onChange={e => setPayoutCurrency(e.target.value)}
+                disabled={!canPayout}
+              >
+                {currencies.map(c => <option key={c} value={c}>{c}</option>)}
+              </select>
+              <div style={{ position: 'absolute', right: 12, top: '50%', transform: 'translateY(-50%)', pointerEvents: 'none' }}>
+                <ChevronDown size={14} color={T.muted} />
+              </div>
+            </div>
+          </div>
+ 
+          {/* Full name */}
+          <div style={fieldWrap}>
+            <label style={sectionLabel}>Full Name</label>
+            <input
+              style={inputStyle}
+              value={payoutName}
+              onChange={e => setPayoutName(e.target.value)}
+              placeholder="As on your bank / wallet"
+              disabled={!canPayout}
+            />
+          </div>
+ 
+          {/* Flutterwave fields */}
+          {payoutGateway === 'flutterwave' && (
+            <>
+              <div style={fieldWrap}>
+                <label style={sectionLabel}>Mobile Money / Account Number</label>
+                <div style={{ display: 'flex', gap: 0 }}>
+                  <div style={{ display: 'flex', alignItems: 'center', padding: '0 12px', background: T.bg3, border: `1px solid ${T.border2}`, borderRight: 'none', borderRadius: '10px 0 0 10px' }}>
+                    <Phone size={14} color={T.muted} />
+                  </div>
+                  <input
+                    style={{ ...inputStyle, borderRadius: '0 10px 10px 0', flex: 1 }}
+                    value={payoutPhone}
+                    onChange={e => setPayoutPhone(e.target.value)}
+                    placeholder="+233 XX XXX XXXX"
+                    disabled={!canPayout}
+                  />
+                </div>
+              </div>
+ 
+              <div style={fieldWrap}>
+                <label style={sectionLabel}>Bank Name (optional)</label>
+                <div style={{ position: 'relative' }}>
+                  <div style={{ position: 'absolute', left: 12, top: '50%', transform: 'translateY(-50%)' }}>
+                    <Building2 size={14} color={T.muted} />
+                  </div>
+                  <input
+                    style={{ ...inputStyle, paddingLeft: 36 }}
+                    value={payoutBank}
+                    onChange={e => setPayoutBank(e.target.value)}
+                    placeholder="e.g. GCB Bank, GTBank"
+                    disabled={!canPayout}
+                  />
+                </div>
+              </div>
+            </>
+          )}
+ 
+          {/* Stripe fields */}
+          {payoutGateway === 'stripe' && (
+            <>
+              <div style={fieldWrap}>
+                <label style={sectionLabel}>Stripe Account ID or IBAN</label>
+                <div style={{ display: 'flex', gap: 0 }}>
+                  <div style={{ display: 'flex', alignItems: 'center', padding: '0 12px', background: T.bg3, border: `1px solid ${T.border2}`, borderRight: 'none', borderRadius: '10px 0 0 10px' }}>
+                    <Hash size={14} color={T.muted} />
+                  </div>
+                  <input
+                    style={{ ...inputStyle, borderRadius: '0 10px 10px 0', flex: 1 }}
+                    value={payoutAccount}
+                    onChange={e => setPayoutAccount(e.target.value)}
+                    placeholder="acct_XXXXXXXX or GB00 XXXX..."
+                    disabled={!canPayout}
+                  />
+                </div>
+              </div>
+ 
+              <div style={fieldWrap}>
+                <label style={sectionLabel}>Bank Name</label>
+                <div style={{ position: 'relative' }}>
+                  <div style={{ position: 'absolute', left: 12, top: '50%', transform: 'translateY(-50%)' }}>
+                    <Building2 size={14} color={T.muted} />
+                  </div>
+                  <input
+                    style={{ ...inputStyle, paddingLeft: 36 }}
+                    value={payoutBank}
+                    onChange={e => setPayoutBank(e.target.value)}
+                    placeholder="e.g. Barclays, Chase"
+                    disabled={!canPayout}
+                  />
+                </div>
+              </div>
+            </>
+          )}
+        </div>
+ 
+        {/* Fee disclosure */}
+        <div style={{ display: 'flex', gap: 10, alignItems: 'flex-start', padding: '12px 16px', borderRadius: 10, background: T.bg2, border: `1px solid ${T.border}`, marginBottom: 20 }}>
+          <Info size={14} color={T.muted} style={{ flexShrink: 0, marginTop: 1 }} />
+          <div style={{ fontSize: 12, color: T.muted, lineHeight: 1.7 }}>
+            <span style={{ color: T.text, fontWeight: 600 }}>Processing fees:</span>
+            {' '}Flutterwave charges 1.4% (capped at $20). Stripe charges 0.25% + $0.25 per transfer.
+            Payouts are reviewed within 1–3 business days. Ensure your details are correct before submitting.
+          </div>
+        </div>
+ 
+        {/* Error */}
+        {payoutError && (
+          <div style={{ display: 'flex', gap: 8, alignItems: 'center', padding: '10px 14px', borderRadius: 10, background: 'rgba(239,68,68,0.07)', border: `1px solid rgba(239,68,68,0.2)`, marginBottom: 16, fontSize: 13, color: T.danger }}>
+            <AlertCircle size={14} style={{ flexShrink: 0 }} />
+            {payoutError}
+          </div>
+        )}
+ 
+        {/* Success */}
+        {payoutSuccess && (
+          <div style={{ display: 'flex', gap: 8, alignItems: 'center', padding: '12px 16px', borderRadius: 10, background: 'rgba(34,197,94,0.07)', border: `1px solid rgba(34,197,94,0.2)`, marginBottom: 16, fontSize: 13, color: T.success }}>
+            <Check size={14} style={{ flexShrink: 0 }} />
+            Payout request submitted. Your funds will arrive within 1–3 business days.
+          </div>
+        )}
+ 
+        {/* Submit */}
+        <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between', gap: 14, flexWrap: 'wrap' }}>
+          <div style={{ fontSize: 12, color: T.muted, display: 'flex', alignItems: 'center', gap: 6 }}>
+            <ShieldCheck size={13} color={T.muted} />
+            256-bit encrypted · PCI DSS compliant
+          </div>
+          <button
+            onClick={handlePayout}
+            disabled={!canPayout || payoutProcessing}
+            style={{
+              ...btnGold,
+              padding: '12px 28px',
+              fontSize: 14,
+              opacity: (!canPayout || payoutProcessing) ? 0.5 : 1,
+              cursor: (!canPayout || payoutProcessing) ? 'not-allowed' : 'pointer',
+              background: payoutGateway === 'stripe' ? '#635bff' : T.accent,
+              color: payoutGateway === 'stripe' ? '#fff' : '#080808',
+            }}
+          >
+            {payoutProcessing
+              ? <Loader2 size={15} style={{ animation: 'spin 0.8s linear infinite' }} />
+              : <ArrowDownToLine size={15} />
+            }
+            {payoutProcessing ? 'Processing...' : 'Request Payout'}
+          </button>
+        </div>
+      </div>
+ 
+      {/* ── Payout history placeholder ── */}
+      <div style={{ ...card, marginBottom: 16 }}>
+        <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between', marginBottom: 18, flexWrap: 'wrap', gap: 8 }}>
+          <h2 style={{ fontFamily: "'Poppins', sans-serif", fontSize: 16, fontWeight: 700, color: T.text, margin: 0 }}>
+            Payout History
+          </h2>
+          <span style={{ fontSize: 12, color: T.muted }}>Last 6 months</span>
+        </div>
+ 
+        {/* Column headers */}
+        <div style={{ display: 'grid', gridTemplateColumns: '1fr 100px 80px 90px', gap: 8, padding: '8px 12px', borderRadius: 8, background: T.bg2, marginBottom: 8 }}>
+          {['Date', 'Amount', 'Method', 'Status'].map(h => (
+            <span key={h} style={{ fontSize: 11, color: T.muted2, fontWeight: 700, textTransform: 'uppercase', letterSpacing: '0.05em' }}>{h}</span>
+          ))}
+        </div>
+ 
+        {/* Empty state */}
+        <div style={{ textAlign: 'center', padding: '32px 0', color: T.muted }}>
+          <Wallet size={30} style={{ opacity: 0.25, marginBottom: 10 }} />
+          <p style={{ fontSize: 14, margin: 0 }}>No payouts yet. Request your first withdrawal above.</p>
+        </div>
+      </div>
+ 
+      {/* ── How earnings work ── */}
+      <div style={card}>
+        <h2 style={{ fontFamily: "'Poppins', sans-serif", fontSize: 16, fontWeight: 700, color: T.text, margin: '0 0 18px' }}>
+          How earnings work
+        </h2>
+        <div style={{ display: 'flex', flexDirection: 'column', gap: 16 }}>
+          {[
+            ['Listeners stream your tracks',  'Every unique stream on Goaradio is logged in real-time and credited to your account.'],
+            ['$GOA tokens are allocated',      'Artists receive $GOA proportional to their total stream count each 30-day epoch.'],
+            ['Choose your payout gateway',     'Select Flutterwave for African mobile money and bank transfers, or Stripe for international card and bank payouts.'],
+            ['Withdraw to your account',       'Submit a payout request once you reach the 500 $GOA threshold. Funds arrive within 1–3 business days after verification.'],
+          ].map(([title, sub], i) => (
+            <div key={title} style={{ display: 'flex', gap: 14, alignItems: 'flex-start' }}>
+              <div style={{ width: 28, height: 28, borderRadius: 8, flexShrink: 0, background: 'rgba(255,215,0,0.08)', border: `1px solid rgba(255,215,0,0.15)`, display: 'flex', alignItems: 'center', justifyContent: 'center', fontSize: 12, fontWeight: 700, color: T.accent, fontFamily: "'Poppins', sans-serif" }}>
+                {i + 1}
+              </div>
+              <div>
+                <div style={{ fontSize: 14, fontWeight: 600, color: T.text, marginBottom: 3 }}>{title}</div>
+                <div style={{ fontSize: 13, color: T.muted, lineHeight: 1.6 }}>{sub}</div>
+              </div>
+            </div>
+          ))}
+        </div>
+      </div>
+    </div>
+  )
+}
 
   // ── TRACKS ────────────────────────────────────────────────────────────────
   function PageTracks() {
@@ -1368,6 +1768,9 @@ export default function Dashboard() {
           .goa-main        { margin-left: 0 !important; padding: 16px !important; }
           .goa-mobile-bar  { display: flex !important; }
         }
+        @media (max-width: 600px) {
+  .goa-payout-history { grid-template-columns: 1fr 80px 70px !important; }
+}
         @media (max-width: 600px) {
   .goa-profile-grid { grid-template-columns: 1fr !important; }
 }
