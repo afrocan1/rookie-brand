@@ -1253,7 +1253,7 @@ export default function Dashboard() {
               style={gatewayBtn(payoutGateway === 'flutterwave', '#f5a623')}
             >
               {/* Flutterwave logo */}
-              <img src={flutterwaveLogo} alt="Flutterwave" width={20} height={20} style={{ borderRadius: 4, objectFit: 'contain' }} />
+              <Image src={flutterwaveLogo} alt="Flutterwave" width={20} height={20} style={{ borderRadius: 4, objectFit: 'contain' }} />
               <div style={{ textAlign: 'left' }}>
                 <div style={{ fontSize: 13, fontWeight: 700, color: payoutGateway === 'flutterwave' ? T.text : T.muted }}>Flutterwave</div>
                 <div style={{ fontSize: 11, color: T.muted }}>Mobile money · Bank transfer</div>
