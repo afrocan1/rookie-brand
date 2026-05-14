@@ -1121,7 +1121,7 @@ export default function Dashboard() {
   const currencies = payoutGateway === 'stripe' ? stripeCurrencies : fwCurrencies
  
   // Approximate GOA → USD rate (placeholder; wire up a real oracle)
-  const GOA_USD_RATE = 0.012
+  const GOA_USD_RATE = 1.08
   const estimatedUSD = payoutAmount ? (parseFloat(payoutAmount) * GOA_USD_RATE).toFixed(2) : '0.00'
  
   async function handlePayout() {
@@ -1175,14 +1175,14 @@ export default function Dashboard() {
         <h1 style={{ fontFamily: "'Poppins', sans-serif", fontSize: 'clamp(22px, 4vw, 28px)', fontWeight: 800, color: T.text, margin: 0 }}>
           Earnings
         </h1>
-        <p style={{ fontSize: 14, color: T.muted, marginTop: 4 }}>Your Stream-to-Earn rewards and payout management</p>
+        <p style={{ fontSize: 14, color: T.muted, marginTop: 4 }}>Your $GOA royalties and payout management</p>
       </div>
  
       {/* ── Total earned hero ── */}
       <div style={{ ...card, marginBottom: 16 }}>
         <div style={{ textAlign: 'center', padding: '12px 0 24px' }}>
           <div style={{ fontSize: 11, color: T.muted, textTransform: 'uppercase', letterSpacing: '0.06em', marginBottom: 10, fontFamily: "'DM Sans', sans-serif", fontWeight: 600 }}>
-            Total Earned
+            Total Royalties Earned
           </div>
           <div style={{ fontFamily: "'Poppins', sans-serif", fontSize: 'clamp(42px, 10vw, 60px)', fontWeight: 800, lineHeight: 1, color: T.text }}>
             {tracksLoading ? '—' : totalGoa.toLocaleString()}
@@ -1220,7 +1220,7 @@ export default function Dashboard() {
               Request Payout
             </h2>
             <p style={{ fontSize: 13, color: T.muted, margin: 0 }}>
-              Withdraw your $GOA earnings directly to your bank or mobile wallet
+              Withdraw your $GOA royalties directly to your bank or mobile wallet
             </p>
           </div>
           <div style={{ display: 'flex', alignItems: 'center', gap: 6, padding: '6px 12px', borderRadius: 20, background: 'rgba(34,197,94,0.07)', border: '1px solid rgba(34,197,94,0.18)' }}>
@@ -1236,7 +1236,7 @@ export default function Dashboard() {
             <div style={{ fontSize: 13, color: T.muted, lineHeight: 1.6 }}>
               You need at least <span style={{ color: T.accent, fontWeight: 600 }}>{MIN_PAYOUT} $GOA</span> to request a payout.
               You currently have <span style={{ color: T.text, fontWeight: 600 }}>{totalGoa} $GOA</span>.
-              Keep streaming to unlock withdrawals.
+              Keep releasing and growing your fanbase to unlock withdrawals.
             </div>
           </div>
         )}
@@ -1438,7 +1438,7 @@ export default function Dashboard() {
           <div style={{ fontSize: 12, color: T.muted, lineHeight: 1.7 }}>
             <span style={{ color: T.text, fontWeight: 600 }}>Processing fees:</span>
             {' '}Flutterwave charges 1.4% (capped at $20). Stripe charges 0.25% + $0.25 per transfer.
-            Payouts are reviewed within 1–3 business days. Ensure your details are correct before submitting.
+            Payout requests are reviewed within 1–3 business days. Goaradio allocates 75% of revenue to artists — 85% for exclusive releases.
           </div>
         </div>
  
@@ -1454,7 +1454,7 @@ export default function Dashboard() {
         {payoutSuccess && (
           <div style={{ display: 'flex', gap: 8, alignItems: 'center', padding: '12px 16px', borderRadius: 10, background: 'rgba(34,197,94,0.07)', border: `1px solid rgba(34,197,94,0.2)`, marginBottom: 16, fontSize: 13, color: T.success }}>
             <Check size={14} style={{ flexShrink: 0 }} />
-            Payout request submitted. Your funds will arrive within 1–3 business days.
+            Payout request submitted. Your royalties will arrive within 1–3 business days after verification.
           </div>
         )}
  
@@ -1505,21 +1505,21 @@ export default function Dashboard() {
         {/* Empty state */}
         <div style={{ textAlign: 'center', padding: '32px 0', color: T.muted }}>
           <Wallet size={30} style={{ opacity: 0.25, marginBottom: 10 }} />
-          <p style={{ fontSize: 14, margin: 0 }}>No payouts yet. Request your first withdrawal above.</p>
+          <p style={{ fontSize: 14, margin: 0 }}>No payouts yet. Submit your first withdrawal request above.</p>
         </div>
       </div>
  
       {/* ── How earnings work ── */}
       <div style={card}>
         <h2 style={{ fontFamily: "'Poppins', sans-serif", fontSize: 16, fontWeight: 700, color: T.text, margin: '0 0 18px' }}>
-          How earnings work
+          How Your Royalties Work
         </h2>
         <div style={{ display: 'flex', flexDirection: 'column', gap: 16 }}>
           {[
-            ['Listeners stream your tracks',  'Every unique stream on Goaradio is logged in real-time and credited to your account.'],
-            ['$GOA tokens are allocated',      'Artists receive $GOA proportional to their total stream count each 30-day epoch.'],
-            ['Choose your payout gateway',     'Select Flutterwave for African mobile money and bank transfers, or Stripe for international card and bank payouts.'],
-            ['Withdraw to your account',       'Submit a payout request once you reach the 500 $GOA threshold. Funds arrive within 1–3 business days after verification.'],
+            ['Fans stream your tracks',        'Every unique stream on Goaradio is logged in real-time and credited to your royalty balance.'],
+            ['$GOA tokens are allocated',       'Using our small pool model, your share is calculated directly from the listening time your fans spend on your music each 30-day epoch — not diluted across the entire platform.'],
+            ['Choose your payout method',       'Select Flutterwave for African mobile money and bank transfers, or Stripe for international bank payouts.'],
+            ['Withdraw your royalties',         'Submit a payout request once you reach the 500 $GOA threshold. Funds arrive within 1–3 business days after verification.'],
           ].map(([title, sub], i) => (
             <div key={title} style={{ display: 'flex', gap: 14, alignItems: 'flex-start' }}>
               <div style={{ width: 28, height: 28, borderRadius: 8, flexShrink: 0, background: 'rgba(255,215,0,0.08)', border: `1px solid rgba(255,215,0,0.15)`, display: 'flex', alignItems: 'center', justifyContent: 'center', fontSize: 12, fontWeight: 700, color: T.accent, fontFamily: "'Poppins', sans-serif" }}>
