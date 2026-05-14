@@ -4,6 +4,7 @@ import { useState, useEffect, useCallback } from 'react'
 import { useRouter } from 'next/navigation'
 import Image from 'next/image'
 import goaradioLogo from '../../public/goaradio logo round (1).png'
+import flutterwaveLogo from '../../public/flutterwave-logo.png'
 import {
   onAuthStateChanged,
   signOut,
@@ -1121,7 +1122,7 @@ export default function Dashboard() {
   const currencies = payoutGateway === 'stripe' ? stripeCurrencies : fwCurrencies
  
   // Approximate GOA → USD rate (placeholder; wire up a real oracle)
-  const GOA_USD_RATE = 1.08
+  const GOA_USD_RATE = 0.012
   const estimatedUSD = payoutAmount ? (parseFloat(payoutAmount) * GOA_USD_RATE).toFixed(2) : '0.00'
  
   async function handlePayout() {
@@ -1251,13 +1252,8 @@ export default function Dashboard() {
               onClick={() => { setPayoutGateway('flutterwave'); setPayoutCurrency('GHS') }}
               style={gatewayBtn(payoutGateway === 'flutterwave', '#f5a623')}
             >
-              {/* Flutterwave wordmark SVG */}
-              <svg width="20" height="20" viewBox="0 0 32 32" fill="none" xmlns="http://www.w3.org/2000/svg">
-                <rect width="32" height="32" rx="6" fill="#f5a623"/>
-                <path d="M8 10c2-3 6-3 8 0l2 3c2 3 6 3 8 0" stroke="#fff" strokeWidth="2.2" strokeLinecap="round" fill="none"/>
-                <path d="M8 16c2-3 6-3 8 0l2 3c2 3 6 3 8 0" stroke="#fff" strokeWidth="2.2" strokeLinecap="round" fill="none"/>
-                <path d="M8 22c2-3 6-3 8 0l2 3c2 3 6 3 8 0" stroke="#fff" strokeWidth="2.2" strokeLinecap="round" fill="none"/>
-              </svg>
+              {/* Flutterwave logo */}
+              <img src={flutterwaveLogo} alt="Flutterwave" width={20} height={20} style={{ borderRadius: 4, objectFit: 'contain' }} />
               <div style={{ textAlign: 'left' }}>
                 <div style={{ fontSize: 13, fontWeight: 700, color: payoutGateway === 'flutterwave' ? T.text : T.muted }}>Flutterwave</div>
                 <div style={{ fontSize: 11, color: T.muted }}>Mobile money · Bank transfer</div>
